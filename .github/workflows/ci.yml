@@ -358,11 +358,10 @@ jobs:
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
       ACTIONLINT_VERSION: 1.7.12
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-      # govulncheck >= 1.8 needs Go 1.26 to *build*; it then analyses the
-      # modules with the project's own Go (GOTOOLCHAIN=local from setup-go),
-      # so standard-library findings match the toolchain that ships.
+      # govulncheck is built with the project's own Go toolchain (from
+      # go.work via setup-go): it must be at least as new as the Go version
+      # of the code it analyses, or package loading fails.
       GOVULNCHECK_VERSION: v1.8.0
-      GOVULNCHECK_BUILD_TOOLCHAIN: go1.26.9
       CARGO_AUDIT_VERSION: 0.22.2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -401,7 +400,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           {
-            GOTOOLCHAIN="$GOVULNCHECK_BUILD_TOOLCHAIN" GOBIN="$RUNNER_TEMP/bin" \
+            GOTOOLCHAIN="$(go env GOVERSION)" GOBIN="$RUNNER_TEMP/bin" \
               go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
             go version
             rc=0

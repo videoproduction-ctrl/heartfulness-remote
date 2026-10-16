@@ -251,10 +251,27 @@ private struct Hint: View {
 // MARK: - Steps
 
 private struct WelcomeStep: View {
+    /// Running from Downloads (or a translocated copy): "Open at login" and the firewall rule
+    /// would point at a temporary location.
+    private var outsideApplications: Bool {
+        let path = Bundle.main.bundlePath
+        return path.hasSuffix(".app")
+            && !AppPlacement.isInApplicationsFolder(bundlePath: path, homeDirectory: NSHomeDirectory())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             StepTitle(title: "Welcome to Heartfulness Remote",
                       subtitle: "Use this Mac from anywhere — from your phone, another computer, or any web browser. Setup takes about five minutes.")
+            if outsideApplications {
+                ProblemBox(title: "Please move the app to Applications first",
+                           message: "Heartfulness Remote is not in your Applications folder, so it can't start by itself when you log in. Quit it (menu bar icon → Quit), drag it into Applications, and open it from there.",
+                           color: .orange) {
+                    Button("Show the App in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 14) {
                 Label("Private: the picture, sound, mouse and keyboard are encrypted from end to end. Not even your own server can watch.",
                       systemImage: "lock.shield")

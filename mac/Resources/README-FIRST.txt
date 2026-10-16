@@ -55,10 +55,14 @@ icon and switch on "Block all connections".
 
 AFTER AN UPDATE
 ---------------
-Replace the old app in Applications with the new one. macOS may ask you to
-allow Screen Recording and Accessibility again; the app shows you how.
-If Heartfulness Remote is already switched on in those lists, switch it off
-and on again.
+Quit Heartfulness Remote (menu bar icon > Quit), then replace the old app in
+Applications with the new one and open it. Then:
+  - If macOS asks whether "Heartfulness Remote" may use information stored in
+    your keychain, type your Mac login password and click "Always Allow".
+    (This is where the app keeps this Mac's secret key.)
+  - macOS may ask you to allow Screen Recording and Accessibility again; the
+    app shows you how. If Heartfulness Remote is already switched on in those
+    lists, switch it off and on again.
 
 
 More help: see USER-GUIDE.md in the project, or the "Fix offline" section.
