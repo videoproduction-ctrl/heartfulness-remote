@@ -211,6 +211,9 @@ jobs:
             docker build --pull -f server/Dockerfile -t heartfulness-server:ci .
             docker image inspect heartfulness-server:ci --format 'user={{.Config.User}} entrypoint={{json .Config.Entrypoint}} size={{.Size}}'
           } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Deployment checks (compose config, coturn config, TURN auth + relay policy)
+        if: ${{ !cancelled() }}
+        run: bash scripts/test-deploy.sh 2>&1 | tee -a "$RUNNER_TEMP/job.log"
       - name: Collect CI log
         if: always()
         uses: ./.github/actions/ci-log

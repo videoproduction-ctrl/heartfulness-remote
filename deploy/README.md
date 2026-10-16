@@ -27,6 +27,11 @@ Containers: `caddy` (root, all capabilities dropped except binding 80/443),
 `server` (uid 65532, read-only root filesystem, no capabilities, reachable
 only by caddy), `coturn` (user nobody, read-only, `use-auth-secret`, refuses
 to relay to private/reserved addresses). All have `no-new-privileges`.
+Image versions are pinned in `docker-compose.yml` (`docker.io/library/caddy:2.11.7`,
+`docker.io/coturn/coturn:4.18.0`) and in `server/Dockerfile`; change them
+there, then run `scripts/test-deploy.sh` (also run by CI), which checks the
+compose file, starts that coturn with the real config and tests TURN
+authentication and the relay deny list.
 
 Firewall (ufw): incoming denied except 22/tcp (rate limited), 80/tcp,
 443/tcp+udp, 3478/tcp+udp, 49160-49200/udp. Docker-published ports bypass
@@ -71,7 +76,8 @@ tail /var/log/heartfulness-remote-setup.log         # one line per setup/update/
 
 `provision.sh`, `update.sh` and the weekly rebuild share a lock
 (`/run/heartfulness-remote.lock`) so they never overlap. Re-running
-`provision.sh` is always safe.
+`provision.sh` is always safe. If a rebuild or update fails (for example
+the network is down), the containers that were running keep running.
 
 ## Reset (lost passkeys, or the wrong Mac claimed the server)
 
