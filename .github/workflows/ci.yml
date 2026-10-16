@@ -16,7 +16,7 @@ name: CI
 
 on:
   push:
-    branches: ["**", "!ci-results/**"]
+    branches: ["**", "!ci-results/**", "!release"]
   pull_request:
   workflow_dispatch:
   workflow_call:

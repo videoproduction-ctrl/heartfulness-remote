@@ -1,5 +1,6 @@
-# Publishes a GitHub Release when a version tag (v1.2.3) is pushed, or on
-# demand. Builds everything through ci.yml (workflow_call), then attaches:
+# Publishes a GitHub Release when a version tag (v1.2.3) is pushed, when the
+# `release` branch is pushed (version from the VERSION file — used by sessions
+# that may push branches but not tags), or on demand. Builds everything through ci.yml (workflow_call), then attaches:
 #   Heartfulness-Remote-Mac.zip                    host app (+ README-FIRST.txt)
 #   Heartfulness-Remote-Client-Mac.dmg             client for Mac
 #   Heartfulness-Remote-Client-Windows.msi         client for Windows (MSI)
@@ -12,6 +13,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    branches: ["release"]
   workflow_dispatch:
     inputs:
       tag:
@@ -43,12 +45,23 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: VERSION
+          sparse-checkout-cone-mode: false
       - name: Validate tag
         id: v
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then tag="$GITHUB_REF_NAME"; else tag="$INPUT_TAG"; fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="v$(tr -d '[:space:]' < VERSION)"
+          else
+            tag="$INPUT_TAG"
+          fi
           # x.y.z only: the MSI ProductVersion allows major/minor <= 255, patch <= 65535.
           if ! [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] \
              || [ "${BASH_REMATCH[1]}" -gt 255 ] || [ "${BASH_REMATCH[2]}" -gt 255 ] || [ "${BASH_REMATCH[3]}" -gt 65535 ]; then
@@ -107,7 +120,7 @@ jobs:
               gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
             else
               args=(--title "Heartfulness Remote $VERSION" --notes-file ../.github/release-notes.md)
-              if [ "$GITHUB_EVENT_NAME" = push ]; then
+              if [ "$GITHUB_REF_TYPE" = tag ]; then
                 args+=(--verify-tag)
               else
                 args+=(--target "$GITHUB_SHA")
