@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist of "Heartfulness Remote.app" (the Mac host). scripts/build-mac.sh copies it into
+  the bundle and replaces the two version placeholders with plutil (HR_VERSION / build number).
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.heartfulness.remote.host</string>
+	<key>CFBundleName</key>
+	<string>Heartfulness Remote</string>
+	<key>CFBundleDisplayName</key>
+	<string>Heartfulness Remote</string>
+	<key>CFBundleExecutable</key>
+	<string>HeartfulnessRemote</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__HR_VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__HR_BUILD__</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Heartfulness Remote uses this once, when you click “Turn On”, to switch on your Mac's firewall and stealth mode. macOS asks for your password.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Heartfulness Remote — your own private remote access to this Mac.</string>
+</dict>
+</plist>

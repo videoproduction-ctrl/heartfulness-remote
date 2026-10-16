@@ -57,6 +57,12 @@ final class AppModel: ObservableObject {
     /// Short feedback for the owner (shown in the dashboard), e.g. after a failed command.
     @Published var notice: String?
 
+    /// Alert binding for `notice` (`$model.showingNotice`).
+    var showingNotice: Bool {
+        get { notice != nil }
+        set { if !newValue { notice = nil } }
+    }
+
     /// Everything the owner can change; persisted and forwarded to the agent on change.
     @Published var settings: HostSettings {
         didSet { settingsDidChange(from: oldValue) }

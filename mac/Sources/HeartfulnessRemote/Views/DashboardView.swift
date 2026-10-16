@@ -402,12 +402,17 @@ private struct AccessLogPage: View {
                 .font(.callout.weight(.medium))
         } else {
             ProblemBox(title: "Warning: the access log may have been tampered with",
-                       message: "Heartfulness Remote found entries that were changed, removed or reordered outside the app"
-                        + (log.error.map { " (\($0))" } ?? "")
-                        + ". If you didn't expect this, someone with access to this Mac may have tried to hide what happened.") {
+                       message: AccessLogPage.tamperMessage(log.error)) {
                 EmptyView()
             }
         }
+    }
+
+    private static func tamperMessage(_ error: String?) -> String {
+        var text = "Heartfulness Remote found entries that were changed, removed or reordered outside the app"
+        if let error, !error.isEmpty { text += " (\(error))" }
+        text += ". If you didn't expect this, someone with access to this Mac may have tried to hide what happened."
+        return text
     }
 }
 

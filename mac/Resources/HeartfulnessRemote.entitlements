@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for "Heartfulness Remote.app" and its bundled hr-agent helper, signed with the
+  Hardened Runtime (codesign option "runtime") by scripts/build-mac.sh.
+
+  Deliberately empty: no runtime exceptions (no JIT, no unsigned executable memory, no
+  disabled library validation, no DYLD environment variables) and no App Sandbox (the app
+  must post input events, capture the screen and run its helper).
+  * ScreenCaptureKit, CGEvent posting and notifications need user permission (TCC), not
+    entitlements.
+  * The Go helper needs no exceptions under the Hardened Runtime.
+  * NSAppleScript "do shell script … with administrator privileges" (firewall setup) runs in
+    this process and sends no Apple events to other apps, so the apple-events entitlement is
+    not needed.
+-->
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
