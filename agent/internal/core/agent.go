@@ -112,7 +112,8 @@ type Agent struct {
 	dirty         bool
 	lastStateTick time.Time
 
-	media atomic.Pointer[Session] // session receiving OnVideo/OnAudio
+	media   atomic.Pointer[Session] // session receiving OnVideo/OnAudio
+	started atomic.Bool
 }
 
 // New creates an agent; call Start with the CONFIG.
@@ -139,6 +140,9 @@ func (a *Agent) Done() <-chan struct{} { return a.done }
 
 // Stop shuts the agent down (ends any session) and waits.
 func (a *Agent) Stop() {
+	if !a.started.Load() {
+		return
+	}
 	a.post(func() { a.shutdown("host-shutdown") })
 	<-a.done
 }
@@ -200,6 +204,7 @@ func (a *Agent) Start(parent context.Context, cfg Config) error {
 	a.ctx, a.cancel = context.WithCancel(parent)
 
 	a.openStores()
+	a.started.Store(true)
 	go a.loop()
 	if !a.opts.NoSignaling && a.store != nil {
 		a.startSignaling()
@@ -510,8 +515,10 @@ func (a *Agent) OnReady(s signaling.Sender, raw []byte) {
 			a.logf("server reports origin %q, configured %q (using configured)", m.Origin, a.origin)
 		}
 		a.setICEServers(m.IceServers)
-		a.sendTrustSync()
-		a.sendHostStatus()
+		if a.claimed { // an unclaimed (pending) host may not send these
+			a.sendTrustSync()
+			a.sendHostStatus()
+		}
 		a.dirty = true
 	})
 }
@@ -564,6 +571,16 @@ func (a *Agent) handleSignal(typ string, raw []byte) {
 		if s := a.sess; s != nil && s.idB64 == m.SessionID {
 			a.endSession(s, "client:"+truncate(m.Reason, 32), false)
 		}
+	case "host-ready":
+		// Sent again on the same connection when the server gets claimed.
+		was := a.claimed
+		a.claimed = m.Claimed
+		a.setICEServers(m.IceServers)
+		if a.claimed && !was {
+			a.sendTrustSync()
+			a.sendHostStatus()
+		}
+		a.dirty = true
 	case "turn":
 		a.setICEServers(m.IceServers)
 	case "error":
@@ -1043,7 +1060,13 @@ func (a *Agent) setDisplays(list []Display, active int64) {
 	}
 }
 
+// maxLogRead bounds LOG frames well below the 16 MiB IPC limit.
+const maxLogRead = 5000
+
 func (a *Agent) readLog(limit int) {
+	if limit <= 0 || limit > maxLogRead {
+		limit = maxLogRead
+	}
 	if a.alog == nil {
 		a.io.EmitLog(LogResult{Entries: []accesslog.Entry{}, Verified: false, Error: "access log unavailable"})
 		return
@@ -1059,9 +1082,15 @@ func (a *Agent) readLog(limit int) {
 	a.io.EmitLog(LogResult{Entries: entries, Verified: res.Verified, Error: res.Error})
 }
 
-// resetTrustStore is an explicit owner action from the Mac UI: it moves the
-// (tampered) pins.json and access log aside as evidence and starts afresh.
+// resetTrustStore is an explicit owner action from the Mac UI, allowed only
+// while the trust store is unusable (tampered / foreign host key): it moves
+// pins.json and the access log aside as evidence and starts afresh (setup
+// code). A healthy store is never wiped by this command.
 func (a *Agent) resetTrustStore() {
+	if a.store != nil {
+		a.logf("reset-trust-store refused: the trust store is healthy")
+		return
+	}
 	if s := a.sess; s != nil {
 		a.endSession(s, "trust-reset", true)
 	}

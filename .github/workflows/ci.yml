@@ -1,0 +1,506 @@
+# Heartfulness Remote CI: builds and tests every component and produces the
+# installers. Also called by release.yml (workflow_call) for tagged releases.
+#
+# Security posture: only official actions, pinned to full commit SHAs;
+# GITHUB_TOKEN is read-only everywhere except the two "report" jobs, which run
+# no project or third-party code (they only turn log artifacts into
+# ci-results/<job> branches); no secrets are used.
+#
+# Reading results without the GitHub API (push / workflow_dispatch runs):
+#   git fetch -f origin 'refs/heads/ci-results/*:refs/remotes/origin/ci-results/*'
+#   git show origin/ci-results/summary:status.txt
+#   git show origin/ci-results/<job>:job.log      # go, web, docker, security,
+#                                                 # e2e, mac-host, tauri-macos-15,
+#                                                 # tauri-windows-latest
+name: CI
+
+on:
+  push:
+    branches: ["**", "!ci-results/**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Version (x.y.z) stamped into the installers; empty keeps the version in the sources
+        type: string
+        default: ""
+      report-prefix:
+        description: Prefix for ci-results/<prefix><job> branches ("release-" for release runs)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ inputs.report-prefix }}${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ inputs.report-prefix == '' && !startsWith(github.ref, 'refs/tags/') }}
+
+defaults:
+  run:
+    # bash everywhere (Git Bash on Windows) with -eo pipefail, so
+    # `{ ...; } 2>&1 | tee -a "$RUNNER_TEMP/job.log"` keeps failures.
+    shell: bash
+
+env:
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: never
+  NPM_CONFIG_FUND: "false"
+  NPM_CONFIG_UPDATE_NOTIFIER: "false"
+
+jobs:
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+      - name: go vet + go test -race (with go.work)
+        run: |
+          {
+            go version
+            rc=0
+            for m in proto server agent; do
+              echo "::group::$m (go.work)"
+              (cd "$m" && go vet ./... && go test -race -count=1 ./...) || { echo "FAILED: $m (go.work)"; rc=1; }
+              echo "::endgroup::"
+            done
+            exit "$rc"
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: go vet + go test -race (GOWORK=off)
+        if: ${{ !cancelled() }}
+        env:
+          GOWORK: "off"
+        run: |
+          {
+            rc=0
+            for m in proto server agent; do
+              echo "::group::$m (GOWORK=off)"
+              (cd "$m" && go vet ./... && go test -race -count=1 ./...) || { echo "FAILED: $m (GOWORK=off)"; rc=1; }
+              echo "::endgroup::"
+            done
+            exit "$rc"
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: go
+          status: ${{ job.status }}
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci, typecheck, test, build
+        working-directory: web
+        run: |
+          {
+            node --version
+            npm ci --ignore-scripts --no-audit
+            npm run typecheck
+            npm test
+            npm run build
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: No third-party resources in the build
+        run: bash .github/scripts/check-no-cdn.sh web/dist 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 14
+          if-no-files-found: error
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: web
+          status: ${{ job.status }}
+
+  e2e:
+    name: e2e
+    needs: [go, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+      - name: Download web client build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: web/dist
+      - name: End-to-end tests (scripts/e2e.sh)
+        env:
+          HR_WEB_DIST_PREBUILT: "1"
+        run: |
+          {
+            bash scripts/e2e.sh
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-test-results
+          path: |
+            e2e/test-results
+            e2e/playwright-report
+            test-results
+            playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: e2e
+          status: ${{ job.status }}
+
+  docker:
+    name: docker
+    needs: [web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download web client build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: web/dist
+      - name: docker build (server image, not pushed)
+        run: |
+          {
+            docker version --format 'docker {{.Server.Version}}'
+            docker build --pull -f server/Dockerfile -t heartfulness-server:ci .
+            docker image inspect heartfulness-server:ci --format 'user={{.Config.User}} entrypoint={{json .Config.Entrypoint}} size={{.Size}}'
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: docker
+          status: ${{ job.status }}
+
+  mac-host:
+    name: mac-host
+    needs: [go]
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache-dependency-path: agent/go.sum
+      - name: Toolchain versions
+        run: |
+          {
+            sw_vers
+            xcodebuild -version
+            swift --version
+            go version
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: swift test
+        working-directory: mac
+        run: |
+          {
+            swift test
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Build Mac host app (scripts/build-mac.sh, ad-hoc signed)
+        env:
+          HR_VERSION: ${{ inputs.version }}
+        run: |
+          {
+            if [ -n "${HR_VERSION:-}" ] && ! [[ "$HR_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::invalid version '$HR_VERSION'"; exit 1
+            fi
+            bash scripts/build-mac.sh --sign adhoc --out dist
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Stage Heartfulness-Remote-Mac.zip
+        env:
+          STRICT: ${{ inputs.version != '' }}
+        run: bash .github/scripts/stage-mac-host.sh 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: heartfulness-remote-mac-host
+          path: out/Heartfulness-Remote-Mac.zip
+          retention-days: 30
+          if-no-files-found: error
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: mac-host
+          status: ${{ job.status }}
+
+  tauri:
+    name: tauri (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            artifact: heartfulness-remote-client-macos
+          - os: windows-latest
+            artifact: heartfulness-remote-client-windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            tauri/package-lock.json
+            web/package-lock.json
+      - name: Rust toolchain (rustup, stable)
+        run: |
+          {
+            rustup toolchain install stable --profile minimal
+            rustup default stable
+            if [ "$RUNNER_OS" = macOS ]; then
+              rustup target add aarch64-apple-darwin x86_64-apple-darwin
+            fi
+            rustc --version
+            cargo --version
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Unit tests (hr-client-core)
+        working-directory: tauri/src-tauri
+        run: |
+          {
+            cargo test --locked -p hr-client-core
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Build installers (tauri build; builds web/ via beforeBuildCommand)
+        working-directory: tauri
+        env:
+          HR_VERSION: ${{ inputs.version }}
+        run: |
+          {
+            npm ci --ignore-scripts --no-audit
+            args=(--ci)
+            if [ "$RUNNER_OS" = macOS ]; then
+              args+=(--target universal-apple-darwin --bundles "app,dmg")
+            else
+              args+=(--bundles "nsis,msi")
+            fi
+            if [ -n "${HR_VERSION:-}" ]; then
+              [[ "$HR_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid version '$HR_VERSION'"; exit 1; }
+              # A config file avoids JSON quoting through cmd.exe on Windows.
+              printf '{"version":"%s"}\n' "$HR_VERSION" > "$RUNNER_TEMP/tauri-version.json"
+              args+=(--config "$RUNNER_TEMP/tauri-version.json")
+            fi
+            # npm's sh shim runs node directly (no cmd.exe re-quoting).
+            ./node_modules/.bin/tauri build "${args[@]}"
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Stage installers (stable names)
+        run: bash .github/scripts/stage-tauri.sh 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: tauri/out/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: tauri-${{ matrix.os }}
+          status: ${{ job.status }}
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      # govulncheck >= 1.8 needs Go 1.26 to *build*; it then analyses the
+      # modules with the project's own Go (GOTOOLCHAIN=local from setup-go),
+      # so standard-library findings match the toolchain that ships.
+      GOVULNCHECK_VERSION: v1.8.0
+      GOVULNCHECK_BUILD_TOOLCHAIN: go1.26.9
+      CARGO_AUDIT_VERSION: 0.22.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: No secret files tracked
+        run: bash .github/scripts/check-tracked-files.sh 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Secret scan (gitleaks, full history)
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            bash .github/scripts/install-pinned-tool.sh \
+              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+              "$GITLEAKS_SHA256" gitleaks
+            "$RUNNER_TEMP/bin/gitleaks" git --config .github/gitleaks.toml --redact --no-banner --no-color --exit-code 1 .
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Lint workflows (actionlint + shellcheck)
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            bash .github/scripts/install-pinned-tool.sh \
+              "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+              "$ACTIONLINT_SHA256" actionlint
+            shellcheck --version | head -n 2
+            "$RUNNER_TEMP/bin/actionlint" -no-color
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: ${{ !cancelled() }}
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+      - name: govulncheck (server, agent)
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            GOTOOLCHAIN="$GOVULNCHECK_BUILD_TOOLCHAIN" GOBIN="$RUNNER_TEMP/bin" \
+              go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+            go version
+            rc=0
+            for m in server agent; do
+              echo "::group::govulncheck $m"
+              (cd "$m" && "$RUNNER_TEMP/bin/govulncheck" ./...) || { echo "FAILED: govulncheck $m"; rc=1; }
+              echo "::endgroup::"
+            done
+            exit "$rc"
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ !cancelled() }}
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: npm audit (web runtime dependencies)
+        if: ${{ !cancelled() }}
+        working-directory: web
+        run: |
+          {
+            npm audit --omit=dev
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: cargo audit (Tauri client)
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            rustup toolchain install stable --profile minimal
+            rustup default stable
+            cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+            cd tauri/src-tauri
+            cargo audit
+          } 2>&1 | tee -a "$RUNNER_TEMP/job.log"
+      - name: Collect CI log
+        if: always()
+        uses: ./.github/actions/ci-log
+        with:
+          name: security
+          status: ${{ job.status }}
+
+  # ---------------------------------------------------------------------------
+  # ci-results/<job> branches (push / workflow_dispatch on the owner's repo
+  # only, never pull_request). Two report jobs so fast jobs report early.
+  # These are the only jobs with contents: write; they run no project code
+  # except the report script from this commit's .github/ folder.
+  # ---------------------------------------------------------------------------
+  report-quick:
+    name: report (go, web, docker, security)
+    needs: [go, web, docker, security]
+    if: >-
+      always() &&
+      github.repository == 'videoproduction-ctrl/heartfulness-remote' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: ci-log-*
+          path: ci-logs
+      - name: Publish ci-results branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: ${{ inputs.report-prefix }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          PUBLISH: go=go web=web docker=docker security=security
+        run: bash .github/scripts/ci-report-push.sh ci-logs
+
+  report:
+    name: report (all)
+    needs: [go, web, e2e, docker, mac-host, tauri, security]
+    if: >-
+      always() &&
+      github.repository == 'videoproduction-ctrl/heartfulness-remote' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: ci-log-*
+          path: ci-logs
+      - name: Publish ci-results branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: ${{ inputs.report-prefix }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          PUBLISH: e2e=e2e mac-host=mac-host tauri-macos-15=tauri tauri-windows-latest=tauri
+          SUMMARY: >-
+            go=go web=web e2e=e2e docker=docker mac-host=mac-host
+            tauri-macos-15=tauri tauri-windows-latest=tauri security=security
+        run: bash .github/scripts/ci-report-push.sh ci-logs

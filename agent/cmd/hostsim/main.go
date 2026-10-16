@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/core"
+	"github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/mediafile"
 	"github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/trust"
 	"github.com/videoproduction-ctrl/heartfulness-remote/proto"
 )
@@ -76,20 +77,20 @@ func main() {
 	}
 	pub := priv.Public().(ed25519.PublicKey)
 
-	var src *videoSource
+	var src *mediafile.Video
 	var codecs []core.Codec
 	if *videoPath != "" {
-		src, err = loadVideo(*videoPath)
+		src, err = mediafile.LoadVideo(*videoPath)
 		if err != nil {
 			logger.Fatalf("video: %v", err)
 		}
-		codecs = []core.Codec{src.codec}
+		codecs = []core.Codec{simCodec(src.Codec)}
 	} else {
 		codecs = []core.Codec{core.CodecVP8, core.CodecH264}
 	}
 	var audio [][]byte
 	if *audioPath != "" {
-		if audio, err = loadOpus(*audioPath); err != nil {
+		if audio, err = mediafile.LoadOpus(*audioPath); err != nil {
 			logger.Fatalf("audio: %v", err)
 		}
 	}
@@ -140,6 +141,13 @@ func main() {
 	sim.stopAudio()
 }
 
+func simCodec(name string) core.Codec {
+	if name == mediafile.VP8 {
+		return core.CodecVP8
+	}
+	return core.CodecH264
+}
+
 func mustJSON(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -187,7 +195,7 @@ type simHost struct {
 	priv      ed25519.PrivateKey
 	logger    *log.Logger
 	agent     *core.Agent
-	video     *videoSource
+	video     *mediafile.Video
 	audio     [][]byte
 	fps       int
 	stateFile string
@@ -307,9 +315,9 @@ func (h *simHost) startVideo() {
 				i = 0 // files start with a keyframe
 			case <-t.C:
 			}
-			f := h.video.frames[i%len(h.video.frames)]
+			f := h.video.Frames[i%len(h.video.Frames)]
 			pts := uint64(time.Since(start) / time.Microsecond)
-			h.agent.OnVideo(h.video.codec, f.key, pts, f.data)
+			h.agent.OnVideo(simCodec(h.video.Codec), f.Key, pts, f.Data)
 			i++
 		}
 	}()

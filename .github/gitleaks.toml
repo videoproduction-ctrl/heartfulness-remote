@@ -1,0 +1,18 @@
+# Secret-scan configuration used by the `security` job in ci.yml
+# (gitleaks git --config .github/gitleaks.toml).
+title = "Heartfulness Remote secret scan"
+
+[extend]
+useDefault = true
+
+# Go tests and the published cross-language test vectors contain obviously
+# fake credentials. Only the high-noise `generic-api-key` rule is relaxed for
+# them; every specific rule (private keys, GitHub/AWS/... tokens) still applies.
+[[allowlists]]
+description = "Dummy values in tests and test vectors"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/)[^/]+_test\.go$''',
+  '''(^|/)[^/]+\.test\.ts$''',
+  '''^testdata/''',
+]

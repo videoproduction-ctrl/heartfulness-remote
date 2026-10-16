@@ -3,14 +3,9 @@
 
 import type { App, View } from "../app";
 import { h, replace } from "../dom";
+import { formatLinkCodeInput, normalizeLinkCode } from "../linkcode";
 import { button, card, errorBox, setError } from "../ui";
 import { brand, hero, page } from "./common";
-
-/** "abcd efgh" / "ABCD-EFGH" / "abcdefgh" → "ABCD-EFGH" (or "" if not 8 code characters). */
-export function normalizeLinkCode(s: string): string {
-  const c = s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : "";
-}
 
 export function linkApproveView(app: App): View {
   const err = errorBox("link-error");
@@ -31,8 +26,7 @@ export function linkApproveView(app: App): View {
   });
   input.id = "link-code-input";
   input.addEventListener("input", () => {
-    const raw = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-    input.value = raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
+    input.value = formatLinkCodeInput(input.value);
   });
 
   const body = h("div", { class: "stack" });

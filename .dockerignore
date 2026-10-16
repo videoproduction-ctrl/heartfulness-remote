@@ -1,0 +1,36 @@
+# Build context for server/Dockerfile (context = repository root).
+# Only proto/, server/ and web/ are needed; everything else stays out.
+.git
+.github
+**/node_modules
+**/dist
+!server/internal/webassets/dist
+**/.test-out
+**/coverage
+**/*.test
+**/.DS_Store
+
+# Secrets and generated deployment files never go into an image.
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.p8
+**/secrets
+deploy/turnserver.conf
+
+# Not needed for the server image.
+mac/
+tauri/
+agent/
+e2e/
+dist/
+docs/
+testdata/
+scripts/
+deploy/
+ci-results/
+SECURITY.md
+PROGRESS.md
+server/heartfulness-server

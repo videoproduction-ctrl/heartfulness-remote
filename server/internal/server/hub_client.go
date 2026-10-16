@@ -247,7 +247,7 @@ func (h *hub) pairRevealLocked(c *conn, m *inMsg) {
 		st.AddEvent(store.Event{Time: now, Type: "device-pending", Device: p.name, IP: c.ip.String()})
 		return nil
 	})
-	h.toApproversLocked(h.approvalNeeded(p))
+	h.toApproversLocked(h.approvalNeeded(p), p.devicePub)
 	h.broadcastDevicesChangedLocked()
 }
 
@@ -313,7 +313,7 @@ func (h *hub) pairResultLocked(c *conn, m *inMsg) {
 			p.conn.sendMsg(toDevice)
 		}
 		if p.revealed && !p.bad {
-			h.toApproversLocked(msg{"type": "approval-closed", "requestId": p.id})
+			h.toApproversLocked(msg{"type": "approval-closed", "requestId": p.id}, p.devicePub)
 		}
 		delete(h.pairings, p.id)
 		h.broadcastDevicesChangedLocked()

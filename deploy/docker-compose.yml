@@ -1,0 +1,97 @@
+# Heartfulness Remote production stack (Ubuntu 24.04 VPS).
+# Started by deploy/provision.sh; variables come from deploy/.env, which is
+# generated on the server and never committed.
+#
+#   caddy   — HTTPS with Let's Encrypt, the only service published on 80/443
+#   server  — heartfulness-server (signaling, passkeys, web client); internal only
+#   coturn  — TURN/STUN relay on 3478 + UDP 49160-49200 (host networking)
+
+name: heartfulness-remote
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  caddy:
+    <<: *hardening
+    image: caddy:2.11.7
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      HR_DOMAIN: ${HR_DOMAIN:?HR_DOMAIN must be set in deploy/.env}
+      ACME_EMAIL_DIRECTIVE: ${ACME_EMAIL:+email ${ACME_EMAIL}}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs: [/tmp]
+    networks:
+      web:
+        ipv4_address: 172.30.77.2 # = HR_TRUSTED_PROXIES (only caddy may set X-Forwarded-For)
+    depends_on: [server]
+
+  server:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: heartfulness-server:local
+    user: "nonroot:nonroot"
+    env_file: [.env]
+    environment:
+      HR_LISTEN: ":8080"
+      HR_DATA_DIR: /data
+    volumes:
+      - server_data:/data
+    tmpfs: [/tmp]
+    expose: ["8080"] # reachable only by caddy on the internal network
+    networks: [web]
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/heartfulness-server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  coturn:
+    <<: *hardening
+    image: coturn/coturn:4.7.0
+    # The turnserver binary carries cap_net_bind_service as a file capability;
+    # exec fails unless that one capability stays in the bounding set.
+    cap_add: [NET_BIND_SERVICE]
+    network_mode: host
+    # Run turnserver directly: the image's entrypoint eval()s its arguments and
+    # its default command looks up the external IP with a third-party service.
+    entrypoint: ["turnserver"]
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    tmpfs: [/tmp, /var/lib/coturn]
+
+networks:
+  web:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24
+          gateway: 172.30.77.1
+          ip_range: 172.30.77.128/25 # dynamic addresses never collide with caddy's .2
+
+volumes:
+  caddy_data:
+  caddy_config:
+  server_data:

@@ -1,0 +1,14 @@
+# Caddy: HTTPS (Let's Encrypt, automatic renewal) in front of
+# heartfulness-server. No access logs are written. Caddy keeps retrying
+# certificate issuance on its own if DNS is not ready yet.
+{
+	admin off
+	{$ACME_EMAIL_DIRECTIVE}
+}
+
+{$HR_DOMAIN} {
+	encode zstd gzip
+	header -Server
+	header -Via
+	reverse_proxy server:8080
+}

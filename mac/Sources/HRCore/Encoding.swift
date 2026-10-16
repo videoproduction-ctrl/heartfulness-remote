@@ -74,8 +74,8 @@ public enum Fingerprint {
 public enum SASFormatter {
     /// "123456" → "123 456". Anything that is not exactly six digits is returned unchanged.
     public static func format(_ raw: String) -> String {
-        guard let groups = groups(raw) else { return raw }
-        return groups.0 + " " + groups.1
+        guard let parts = groups(raw) else { return raw }
+        return parts.0 + " " + parts.1
     }
 
     /// Splits a SAS into its two 3-digit halves, ignoring spaces.

@@ -152,6 +152,7 @@ export function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
 /** Cryptographically secure random bytes (WebCrypto CSPRNG). */
 export function randomBytes(n: number): Bytes {
   const b = bytes(n);
-  crypto.getRandomValues(b);
+  // getRandomValues fills at most 65536 bytes per call.
+  for (let off = 0; off < n; off += 65536) crypto.getRandomValues(b.subarray(off, Math.min(n, off + 65536)));
   return b;
 }

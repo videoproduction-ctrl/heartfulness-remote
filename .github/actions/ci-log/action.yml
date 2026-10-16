@@ -1,0 +1,29 @@
+name: Collect CI log
+description: >-
+  Writes status.txt and the last 400 lines of $RUNNER_TEMP/job.log (secrets
+  scrubbed) for this job and uploads them as artifact "ci-log-<name>". The
+  report jobs turn these artifacts into ci-results/<name> branches. This action
+  needs no token and no write permission.
+inputs:
+  name:
+    description: Report name (job id; matrix jobs append the OS)
+    required: true
+  status:
+    description: The calling job's job.status
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Write status.txt and job.log
+      shell: bash
+      env:
+        REPORT_NAME: ${{ inputs.name }}
+        JOB_STATUS: ${{ inputs.status }}
+      run: bash "$GITHUB_ACTION_PATH/collect.sh"
+    - name: Upload ci-log-${{ inputs.name }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ci-log-${{ inputs.name }}
+        path: ${{ runner.temp }}/ci-report/${{ inputs.name }}
+        retention-days: 7
+        if-no-files-found: warn

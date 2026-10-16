@@ -339,6 +339,7 @@ type passkeyFinishReq struct {
 	deviceProof
 	FlowID     string          `json:"flowId"`
 	Credential json.RawMessage `json:"credential"`
+	Name       string          `json:"name"` // optional; may also be given in begin
 }
 
 func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +359,14 @@ func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
 	if f == nil || f.sessionHash != a.hash {
 		writeError(w, http.StatusBadRequest, "unknown-flow")
 		return
+	}
+	if req.Name != "" {
+		n, ok := cleanName(req.Name)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "bad-name")
+			return
+		}
+		f.name = n
 	}
 	parsed, err := protocol.ParseCredentialCreationResponseBytes(req.Credential)
 	if err != nil {

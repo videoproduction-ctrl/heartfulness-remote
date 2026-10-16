@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -112,7 +111,6 @@ type Client struct {
 
 	mu        sync.Mutex
 	conn      *websocket.Conn
-	connCtx   context.Context
 	reconnect chan struct{}
 	attempt   int
 }
@@ -215,10 +213,6 @@ func (c *Client) httpClient() *http.Client {
 		TLSHandshakeTimeout: HandshakeLimit,
 		ForceAttemptHTTP2:   false,
 	}
-	if os.Getenv("HTTPS_PROXY") == "" && os.Getenv("https_proxy") == "" &&
-		os.Getenv("HTTP_PROXY") == "" && os.Getenv("http_proxy") == "" {
-		tr.Proxy = nil
-	}
 	return &http.Client{Transport: tr}
 }
 
@@ -291,7 +285,6 @@ func (c *Client) session(ctx context.Context) (string, error) {
 	defer scancel()
 	c.mu.Lock()
 	c.conn = conn
-	c.connCtx = sctx
 	c.attempt = 0
 	c.mu.Unlock()
 	defer func() {
@@ -339,11 +332,8 @@ func (c *Client) session(ctx context.Context) (string, error) {
 		if err := json.Unmarshal(raw, &m); err != nil || m.Type == "" {
 			continue
 		}
-		if m.Type == "error" {
-			// Errors after host-ready are reported but the connection stays
-			// unless the server closes it.
-			c.Logf("signaling: server error %q", m.Code)
-		}
+		// Errors after host-ready are passed to the handler; the connection
+		// stays unless the server closes it.
 		c.Handler.OnMessage(m.Type, raw)
 	}
 }

@@ -26,6 +26,7 @@ const (
 	sendQueueLen       = 256
 	writeTimeout       = 10 * time.Second
 	maxPendingHosts    = 5
+	maxPendingPerIP    = 2
 	maxClientConns     = 20
 	maxPreAuthConns    = 64
 	maxPairings        = 3
@@ -255,6 +256,7 @@ func (c *conn) serve(handle func(*conn, *inMsg) bool) {
 		}
 	})
 	defer authTimer.Stop()
+	defer c.h.wg.Done()
 	defer func() {
 		c.h.remove(c)
 		if !c.closing() {
@@ -325,6 +327,7 @@ type rtcSession struct {
 type hub struct {
 	s  *Server
 	mu sync.Mutex
+	wg sync.WaitGroup // live connection handlers
 
 	all          map[*conn]struct{}
 	preAuth      int
@@ -395,6 +398,7 @@ func (h *hub) accept(w http.ResponseWriter, r *http.Request, isHost bool) *conn 
 	h.mu.Lock()
 	h.all[c] = struct{}{}
 	h.mu.Unlock()
+	h.wg.Add(1)
 	return c
 }
 
@@ -482,18 +486,35 @@ func (h *hub) hostGoneLocked(reason string) {
 			p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "reason": reason})
 		}
 		if p.revealed {
-			h.toApproversLocked(msg{"type": "approval-closed", "requestId": id})
+			h.toApproversLocked(msg{"type": "approval-closed", "requestId": id}, p.devicePub)
 		}
 		delete(h.pairings, id)
 	}
 	h.broadcastHostStatusLocked()
 }
 
-func (h *hub) closeAll() {
+// closeAll asks every connection to close and waits (up to timeout) for
+// their handlers to finish.
+func (h *hub) closeAll(timeout time.Duration) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	for c := range h.all {
 		c.closeWith(websocket.StatusGoingAway, "shutdown")
+	}
+	h.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		h.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		h.mu.Lock()
+		for c := range h.all {
+			c.abort()
+		}
+		h.mu.Unlock()
+		<-done
 	}
 }
 
@@ -564,8 +585,13 @@ func (h *hub) approvedSet() map[string]bool {
 	return out
 }
 
-func (h *hub) toApproversLocked(m msg) {
+// toApproversLocked sends m to connected approved devices, except the
+// device the message is about (exclude).
+func (h *hub) toApproversLocked(m msg, exclude ...string) {
 	approved := h.approvedSet()
+	for _, x := range exclude {
+		delete(approved, x)
+	}
 	for c := range h.clients {
 		if approved[c.devicePub] {
 			c.sendMsg(m)
@@ -661,7 +687,7 @@ func (h *hub) expire(now time.Time) {
 				p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "reason": "expired"})
 			}
 			if p.revealed {
-				h.toApproversLocked(msg{"type": "approval-closed", "requestId": id})
+				h.toApproversLocked(msg{"type": "approval-closed", "requestId": id}, p.devicePub)
 			}
 			delete(h.pairings, id)
 		}
@@ -809,9 +835,17 @@ func (h *hub) hostAuth(c *conn, m *inMsg) bool {
 	if old := h.pendingHosts[pubB64]; old != nil {
 		delete(h.pendingHosts, pubB64)
 		old.fail("replaced")
-	} else if len(h.pendingHosts) >= maxPendingHosts {
-		c.fail("too-many-pending")
-		return false
+	} else {
+		sameIP := 0
+		for _, pc := range h.pendingHosts {
+			if limitKey(pc.ip) == limitKey(c.ip) {
+				sameIP++
+			}
+		}
+		if len(h.pendingHosts) >= maxPendingHosts || sameIP >= maxPendingPerIP {
+			c.fail("too-many-pending")
+			return false
+		}
 	}
 	c.authed = true
 	c.claimCommit = commit

@@ -5,7 +5,7 @@
   "identifier": "org.heartfulness.remote.client",
   "build": {
     "frontendDist": "../../web/dist",
-    "beforeBuildCommand": "npm --prefix ../web ci && npm --prefix ../web run build"
+    "beforeBuildCommand": "npm --prefix ../web ci --ignore-scripts --no-audit && npm --prefix ../web run build"
   },
   "app": {
     "withGlobalTauri": true,

@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -77,16 +78,20 @@ func NewPairing(denials []int64, autoDenyUntil int64) *Pairing {
 	}
 }
 
-var kindRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
+// kindRe matches the server's rule (server/internal/server/webauthn.go).
+var kindRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // ValidName reports whether a device name is acceptable. Names are signed
 // (cert, pair-approve, setup MAC), so they are validated, never rewritten.
+// The rule matches the server's cleanName: 1–64 runes, no surrounding
+// whitespace, no control characters, line/paragraph separators or bidi
+// controls (which could spoof how the name is displayed).
 func ValidName(s string) bool {
-	if s == "" || !utf8.ValidString(s) || utf8.RuneCountInString(s) > 64 {
+	if s == "" || s != strings.TrimSpace(s) || !utf8.ValidString(s) || utf8.RuneCountInString(s) > 64 {
 		return false
 	}
 	for _, r := range s {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' || unicode.In(r, unicode.Bidi_Control) {
 			return false
 		}
 	}

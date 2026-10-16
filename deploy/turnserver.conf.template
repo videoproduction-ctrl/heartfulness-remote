@@ -1,0 +1,78 @@
+# coturn configuration for Heartfulness Remote.
+# deploy/provision.sh renders this template into deploy/turnserver.conf (mode
+# 0640, git-ignored) with the secret from deploy/.env. Do not put secrets here.
+#
+# coturn only relays already-encrypted WebRTC packets (DTLS-SRTP); it never
+# sees screen, audio or input data in the clear.
+
+listening-port=3478
+# No TLS/DTLS listener: media is end-to-end encrypted by WebRTC already and no
+# certificate is configured for coturn. (coturn 4.7 removed the old
+# no-tlsv1/no-tlsv1_1 flags: TLS 1.0/1.1 are off by default and only an
+# explicit "tlsv1"/"tlsv1_1" would turn them back on — never set those.)
+no-tls
+no-dtls
+
+external-ip=@HR_EXTERNAL_IP@
+realm=@HR_DOMAIN@
+server-name=@HR_DOMAIN@
+
+# Time-limited REST API credentials (HMAC-SHA1 of "<expiry>:hr"), issued by
+# heartfulness-server's /api/turn. No static users exist.
+use-auth-secret
+static-auth-secret=@HR_TURN_SECRET@
+fingerprint
+stale-nonce=600
+
+# Relay port range (opened in the firewall by provision.sh).
+min-port=49160
+max-port=49200
+user-quota=12
+total-quota=40
+
+# Never relay into private, loopback, link-local, CGNAT, multicast or
+# reserved address space (prevents using the relay to reach the VPS itself or
+# its provider's internal network).
+no-multicast-peers
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.0.2.0-192.0.2.255
+denied-peer-ip=192.88.99.0-192.88.99.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=198.51.100.0-198.51.100.255
+denied-peer-ip=203.0.113.0-203.0.113.255
+denied-peer-ip=224.0.0.0-239.255.255.255
+denied-peer-ip=240.0.0.0-255.255.255.255
+denied-peer-ip=::-::
+denied-peer-ip=::1-::1
+denied-peer-ip=::ffff:0.0.0.0-::ffff:255.255.255.255
+denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
+denied-peer-ip=64:ff9b:1::-64:ff9b:1:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=100::-100::ffff:ffff:ffff:ffff
+denied-peer-ip=2001::-2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=2001:db8::-2001:db8:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=2002::-2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=ff00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# Hardening. In coturn 4.7, legacy STUN backward compatibility, RFC 5780 and
+# the SOFTWARE attribute are already off by default (the old
+# "no-stun-backward-compatibility" flag was removed; never set
+# "stun-backward-compatibility" or "rfc5780").
+no-cli
+no-rfc5780
+no-software-attribute
+no-dynamic-ip-list
+no-dynamic-realms
+no-auth-pings
+simple-log
+log-file=stdout
+pidfile=/tmp/turnserver.pid
+userdb=/tmp/turndb

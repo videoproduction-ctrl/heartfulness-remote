@@ -103,7 +103,7 @@ func (h *ipcHost) close() {
 	h.mu.Unlock()
 }
 
-func (h *ipcHost) EmitState(s core.State)       { h.send(ipc.TState, s) }
+func (h *ipcHost) EmitState(s core.State)        { h.send(ipc.TState, s) }
 func (h *ipcHost) EmitEncoder(c core.EncoderCmd) { h.send(ipc.TEncoder, c) }
 func (h *ipcHost) EmitEvent(e core.Event)        { h.send(ipc.TEvent, e) }
 func (h *ipcHost) EmitLog(l core.LogResult)      { h.send(ipc.TLog, l) }

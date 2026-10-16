@@ -202,7 +202,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	s.hub.closeAll()
+	s.hub.closeAll(5 * time.Second)
 	err = srv.Shutdown(sctx)
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil

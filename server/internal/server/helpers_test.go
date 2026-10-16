@@ -67,7 +67,7 @@ var testWeb = fstest.MapFS{
 
 // newEnv starts a server. extra overrides HR_* settings. 127.0.0.1 is a
 // trusted proxy so tests can choose client IPs with X-Forwarded-For.
-func newEnv(t *testing.T, extra map[string]string) *testEnv {
+func newEnv(t *testing.T, extra map[string]string, tweak ...func(*Server)) *testEnv {
 	t.Helper()
 	dir := t.TempDir()
 	vars := map[string]string{
@@ -93,10 +93,13 @@ func newEnv(t *testing.T, extra map[string]string) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, f := range tweak {
+		f(srv)
+	}
 	ts := httptest.NewServer(srv.Handler())
 	e := &testEnv{t: t, cfg: cfg, srv: srv, st: st, ts: ts, dir: dir, clock: clock}
 	t.Cleanup(func() {
-		srv.hub.closeAll()
+		srv.hub.closeAll(2 * time.Second)
 		ts.Close()
 	})
 	return e
@@ -152,7 +155,7 @@ func (c *client) do(method, path string, body any, mod ...func(*http.Request)) r
 	if c.ip != "" {
 		req.Header.Set("X-Forwarded-For", c.ip)
 	}
-	if c.origin != "" && method != http.MethodGet {
+	if c.origin != "" && (method != http.MethodGet || c.origin != c.e.cfg.Origin) {
 		req.Header.Set("Origin", c.origin)
 	}
 	if method == http.MethodPost && c.origin == c.e.cfg.Origin {
