@@ -1,5 +1,5 @@
 //! Heartfulness Remote native client: a thin Tauri shell around the bundled
-//! web client (`web/dist`). The webview gets exactly eight commands (see
+//! web client (`web/dist`). The webview gets exactly nine commands (see
 //! capabilities/default.json); all logic lives in `hr-client-core`.
 
 // No console window on Windows release builds.
@@ -31,6 +31,12 @@ fn device_key_public(client: State<'_, AppClient>) -> Result<String, String> {
 #[tauri::command(async)]
 fn device_key_sign(client: State<'_, AppClient>, data: String) -> Result<String, String> {
     Ok(client.device_key_sign(&data)?)
+}
+
+/// New device identity for re-pairing after removal (no trust until approved).
+#[tauri::command(async)]
+fn device_key_reset(client: State<'_, AppClient>) -> Result<String, String> {
+    Ok(client.device_key_reset()?)
 }
 
 #[tauri::command(async)]
@@ -118,6 +124,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             device_key_public,
             device_key_sign,
+            device_key_reset,
             token_get,
             token_set,
             token_clear,

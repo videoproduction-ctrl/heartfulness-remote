@@ -34,6 +34,10 @@ impl<S: SecretStore + Clone> Client<S> {
         self.keys.sign_b64(data)
     }
 
+    pub fn device_key_reset(&self) -> Result<String, Error> {
+        self.keys.reset()
+    }
+
     pub fn token_get(&self) -> Result<Option<String>, Error> {
         self.tokens.get()
     }
@@ -131,6 +135,15 @@ mod tests {
         assert_eq!(c.open_url_target("https://a.example/x").unwrap().as_str(), "https://a.example/x");
         assert!(matches!(c.open_url_target("https://b.example/x"), Err(Error::NotAllowed(_))));
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn device_key_reset_gives_a_new_identity() {
+        let (c, _store, _path) = client("reset");
+        let before = c.device_key_public().unwrap();
+        let after = c.device_key_reset().unwrap();
+        assert_ne!(before, after);
+        assert_eq!(c.device_key_public().unwrap(), after);
     }
 
     #[test]

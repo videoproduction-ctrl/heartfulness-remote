@@ -262,9 +262,9 @@ class TauriPlatform implements Platform {
   }
 
   async resetDeviceKey(): Promise<void> {
-    // The app's device key lives in the OS keychain and the native side
-    // exposes no reset command (by design: the webview can't destroy or
-    // replace it). Re-pairing therefore reuses the same key.
+    // The key lives in the OS keychain; the app replaces it with a fresh one.
+    // The new key has no trust until it is approved again (PROTOCOL.md §5).
+    await this.invoke<string>("device_key_reset");
     this.cached = null;
   }
 

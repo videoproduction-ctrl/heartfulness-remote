@@ -68,7 +68,7 @@ test("a download that fails before starting (file-error with only reqId) is repo
 
 // ------------------------------------------------------------------ Tauri
 
-const TAURI_COMMANDS = new Set(["device_key_public", "device_key_sign", "token_get", "token_set", "token_clear", "config_get", "config_set", "open_url"]);
+const TAURI_COMMANDS = new Set(["device_key_public", "device_key_sign", "device_key_reset", "token_get", "token_set", "token_clear", "config_get", "config_set", "open_url"]);
 const TAURI_SIGN_LABELS = ["HR1/client-auth", "HR1/pair-approve", "HR1/revoke-request", "HR1/kill-request", "HR1/offer"];
 
 function fakeTauri() {

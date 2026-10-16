@@ -30,10 +30,21 @@ if [ ! -d "$REPO_DIR/.git" ]; then
 	exit 1
 fi
 
+# Do not change the code under a running setup or weekly rebuild.
+exec 9>/run/heartfulness-remote.lock
+if ! flock -w 3600 9; then
+	echo "Another setup or rebuild is still running; try again later." >&2
+	exit 1
+fi
 old="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 log "fetching '$REF' (currently at $old)"
-git -C "$REPO_DIR" fetch --quiet --depth 1 --force origin "$REF"
+if ! git -C "$REPO_DIR" fetch --quiet --depth 1 --force origin "$REF"; then
+	log "FAILED: could not download '$REF' from GitHub; nothing was changed"
+	exit 1
+fi
 git -C "$REPO_DIR" checkout --quiet --force --detach FETCH_HEAD
 new="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 log "code updated $old -> $new; rebuilding"
+# provision.sh takes the same lock itself.
+exec 9>&-
 exec bash "$REPO_DIR/deploy/provision.sh"

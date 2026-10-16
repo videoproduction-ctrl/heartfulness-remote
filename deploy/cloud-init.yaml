@@ -2,18 +2,24 @@
 #
 # Heartfulness Remote: automatic server setup
 #
-# 1. On the next line that starts with "HR_DOMAIN=", replace YOUR-NAME.dedyn.io
-#    with your own address. Keep the spaces at the start of the line.
+# 1. On the line below that starts with "HR_DOMAIN=", replace
+#    YOUR-NAME.duckdns.org with your own free address, for example
+#    heartfulness-remote.duckdns.org (a deSEC name like x.dedyn.io works
+#    too). Keep the spaces at the start of the line.
 #    (Optional: put your e-mail after "ACME_EMAIL=" for certificate reminders.)
 # 2. Paste this whole file into the "Cloud config" / "User data" box when you
 #    create an Ubuntu 24.04 server. Nothing else to do: setup runs by itself
 #    and takes about 10 minutes. No password or key goes in this file.
+# 3. Point your address at the new server's IPv4 address (on duckdns.org:
+#    paste the IP next to your name and press "update ip"). This can happen
+#    before or after the server finishes; the HTTPS certificate follows
+#    automatically a few minutes after both are done.
 write_files:
   - path: /etc/heartfulness-remote/domain
     owner: root:root
     permissions: "0644"
     content: |
-      HR_DOMAIN=YOUR-NAME.dedyn.io
+      HR_DOMAIN=YOUR-NAME.duckdns.org
       ACME_EMAIL=
 
   # ---- Nothing below this line needs to be changed. ----
@@ -45,7 +51,8 @@ write_files:
       if ! command -v git >/dev/null 2>&1; then
         for attempt in 1 2 3 4 5; do
           if apt-get -q -o DPkg::Lock::Timeout=600 update >>"$LOG" 2>&1 &&
-             apt-get -y -q -o DPkg::Lock::Timeout=600 install git ca-certificates >>"$LOG" 2>&1; then
+             apt-get -y -q -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confold \
+               install git ca-certificates >>"$LOG" 2>&1; then
             break
           fi
           say "installing git failed (attempt $attempt of 5); retrying in 30 seconds"

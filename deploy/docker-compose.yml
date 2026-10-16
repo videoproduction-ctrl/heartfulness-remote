@@ -5,14 +5,18 @@
 #   caddy   — HTTPS with Let's Encrypt, the only service published on 80/443
 #   server  — heartfulness-server (signaling, passkeys, web client); internal only
 #   coturn  — TURN/STUN relay on 3478 + UDP 49160-49200 (host networking)
+#
+# Container logs go to the systemd journal, which provision.sh limits to
+# 7 days (MaxRetentionSec) and 200 MB, so connection metadata in the logs
+# (client IPs in coturn/caddy messages) is deleted after 7 days like the
+# server's own records. Read them with: docker compose logs <service>
 
 name: heartfulness-remote
 
 x-logging: &logging
-  driver: local
+  driver: journald
   options:
-    max-size: "10m"
-    max-file: "3"
+    tag: "heartfulness-remote/{{.Name}}"
 
 x-hardening: &hardening
   read_only: true
@@ -40,7 +44,7 @@ services:
     tmpfs: [/tmp]
     networks:
       web:
-        ipv4_address: 172.30.77.2 # = HR_TRUSTED_PROXIES (only caddy may set X-Forwarded-For)
+        ipv4_address: 172.30.77.2 # = server's HR_TRUSTED_PROXIES
     depends_on: [server]
 
   server:
@@ -49,17 +53,21 @@ services:
       context: ..
       dockerfile: server/Dockerfile
     image: heartfulness-server:local
-    user: "nonroot:nonroot"
+    user: "65532:65532" # distroless "nonroot"
     env_file: [.env]
     environment:
       HR_LISTEN: ":8080"
       HR_DATA_DIR: /data
+      # Only caddy (fixed address below) may set X-Forwarded-For, so rate
+      # limits and lockouts see the real client IP and cannot be spoofed.
+      HR_TRUSTED_PROXIES: 172.30.77.2/32
     volumes:
       - server_data:/data
     tmpfs: [/tmp]
     expose: ["8080"] # reachable only by caddy on the internal network
     networks: [web]
     pids_limit: 256
+    stop_grace_period: 20s # lets open sessions close cleanly
     healthcheck:
       test: ["CMD", "/heartfulness-server", "healthcheck"]
       interval: 30s
@@ -82,6 +90,7 @@ services:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
     tmpfs: [/tmp, /var/lib/coturn]
 
+# Explicit subnet so caddy's address (and so HR_TRUSTED_PROXIES) is fixed.
 networks:
   web:
     driver: bridge

@@ -1,3 +1,7 @@
 # Generated on the server; contain secrets. Never commit.
 .env
 turnserver.conf
+# Temporary files provision.sh writes before renaming them (also secret).
+.env.*
+!.env.example
+.turnserver.*

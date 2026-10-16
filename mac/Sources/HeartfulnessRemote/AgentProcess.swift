@@ -83,8 +83,12 @@ final class AgentProcess: @unchecked Sendable {
         sendJSON(.config, config)
     }
 
-    /// Stops the helper: closes stdin (the agent exits on EOF), then terminates it if needed.
-    func stop() {
+    /// Stops the helper: closes stdin (the agent ends any session, flushes its files and
+    /// exits on EOF), then terminates it if it is still running after a grace period.
+    /// `completion` runs on a background queue once the old process has exited (or
+    /// immediately if none was running). Start a new helper only after it ran, so two
+    /// agents never write the same pins.json / hash-chained access log at once.
+    func stop(completion: (@Sendable () -> Void)? = nil) {
         lock.lock()
         let process = self.process
         let handle = stdinHandle
@@ -94,16 +98,35 @@ final class AgentProcess: @unchecked Sendable {
         queuedBytes = 0
         lock.unlock()
 
-        guard let process else { return }
+        guard let process else {
+            completion?()
+            return
+        }
         writeQueue.async {
             try? handle?.close()
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
-            if process.isRunning {
+        DispatchQueue.global(qos: .utility).async {
+            if !AgentProcess.waitForExit(process, seconds: 3) {
                 Log.agent.notice("hr-agent did not exit after stdin closed; terminating")
                 process.terminate()
+                if !AgentProcess.waitForExit(process, seconds: 2) {
+                    Log.agent.error("hr-agent still running after SIGTERM; sending SIGKILL")
+                    kill(process.processIdentifier, SIGKILL)
+                    _ = AgentProcess.waitForExit(process, seconds: 1)
+                }
             }
+            completion?()
         }
+    }
+
+    /// Polls until the process has exited; returns false on timeout. Blocking.
+    private static func waitForExit(_ process: Process, seconds: Double) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while process.isRunning {
+            if Date() >= deadline { return false }
+            usleep(50_000)
+        }
+        return true
     }
 
     // MARK: Sending

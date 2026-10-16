@@ -3,6 +3,7 @@
 const COMMANDS: &[&str] = &[
     "device_key_public",
     "device_key_sign",
+    "device_key_reset",
     "token_get",
     "token_set",
     "token_clear",

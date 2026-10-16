@@ -8,9 +8,11 @@
 # Usage: provision.sh [domain] [external-ip]
 #   domain       default: $HR_DOMAIN, then /etc/heartfulness-remote/domain,
 #                then the existing deploy/.env
-#   external-ip  default: $HR_EXTERNAL_IP, then the source address of
-#                `ip -4 route get 1.1.1.1` (a local routing lookup; no
-#                third-party IP service is contacted)
+#   external-ip  the server's public IPv4 address. Default: $HR_EXTERNAL_IP,
+#                then the source address of `ip -4 route get 1.1.1.1` (a
+#                local routing lookup; no third-party IP service is
+#                contacted). If that address is private (VPS behind 1:1 NAT),
+#                the value already in deploy/.env is kept.
 #
 # Short progress/status lines: /var/log/heartfulness-remote-setup.log
 # Full command output:         /var/log/heartfulness-remote-provision.log
@@ -27,8 +29,8 @@ CONFIG_FILE=/etc/heartfulness-remote/domain
 STATE_DIR=/var/lib/heartfulness-remote
 STATUS_LOG=/var/log/heartfulness-remote-setup.log
 DETAIL_LOG=/var/log/heartfulness-remote-provision.log
-CADDY_IP=172.30.77.2
-COTURN_GID=65534 # "nogroup" inside the coturn image
+LOCK_FILE=/run/heartfulness-remote.lock # shared with rebuild.sh and update.sh
+COTURN_GID=65534                        # "nogroup" inside the coturn image
 
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 APT=(apt-get -y -q -o DPkg::Lock::Timeout=900 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
@@ -90,13 +92,28 @@ valid_ipv4() {
 }
 private_ipv4() { [[ "$1" =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|127\.|169\.254\.) ]]; }
 
+# source_rev: the code version being deployed (git commit, or the commit
+# recorded by scripts/deploy-server.sh for copied files).
+source_rev() {
+	git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null ||
+		head -c 64 "$REPO_DIR/.source-rev" 2>/dev/null ||
+		echo "copied files"
+}
+
 # ---------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Please run this as root (sudo $0)." >&2
+	exit 1
+fi
 mkdir -p "$(dirname "$STATUS_LOG")" "$STATE_DIR"
+# Keep the full output of the previous run next to this one.
+if [ -s "$DETAIL_LOG" ]; then mv -f "$DETAIL_LOG" "$DETAIL_LOG.1"; fi
 touch "$DETAIL_LOG" && chmod 600 "$DETAIL_LOG"
 touch "$STATUS_LOG" && chmod 644 "$STATUS_LOG"
 
-if [ "$(id -u)" -ne 0 ]; then
-	echo "Please run this as root (sudo $0)." >&2
+exec 9>"$LOCK_FILE"
+if ! flock -w 3600 9; then
+	status "FAILED: another setup, update or weekly rebuild is still running (waited 1 hour)"
 	exit 1
 fi
 for f in docker-compose.yml Caddyfile turnserver.conf.template rebuild.sh systemd/heartfulness-rebuild.service systemd/heartfulness-rebuild.timer; do
@@ -122,7 +139,7 @@ if [ -n "$ACME_EMAIL" ] && ! [[ "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-
 	ACME_EMAIL=""
 fi
 
-status "START provisioning https://$DOMAIN ($(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "copied files"))"
+status "START provisioning https://$DOMAIN (code $(source_rev))"
 
 # ---------------------------------------------------------------------------
 step "1/9: installing system updates and packages (this can take a few minutes)"
@@ -162,13 +179,16 @@ X11Forwarding no
 MaxAuthTries 3
 LoginGraceTime 30
 EOF
+# Ubuntu 24.04 starts sshd on demand (ssh.socket), so its runtime directory
+# may not exist yet; `sshd -t` refuses to run without it.
+install -d -m 0755 /run/sshd
 if sshd -t >>"$DETAIL_LOG" 2>&1; then
-	systemctl reload ssh >>"$DETAIL_LOG" 2>&1 || systemctl reload sshd >>"$DETAIL_LOG" 2>&1 || true
+	run systemctl try-reload-or-restart ssh.service || true
 else
 	rm -f /etc/ssh/sshd_config.d/10-heartfulness-remote.conf
 	status "NOTE: SSH config check failed; left SSH settings unchanged"
 fi
-if ! grep -qs '^ssh-\|^ecdsa-\|^sk-' /root/.ssh/authorized_keys; then
+if ! cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | grep -qE '^[[:space:]]*(ssh-|ecdsa-|sk-)'; then
 	status "NOTE: no SSH key is installed, so SSH login is disabled. That is fine: setup and updates do not need it."
 fi
 
@@ -200,13 +220,34 @@ run systemctl restart fail2ban
 
 # ---------------------------------------------------------------------------
 step "5/9: system settings (7-day log retention, Docker)"
+# All logs (system, SSH, firewall and the containers, which use Docker's
+# journald log driver) live in the systemd journal only, for at most 7 days.
+# MaxFileSec makes journald start a new file daily so old entries can
+# actually be deleted (the default is one file per month).
 mkdir -p /etc/systemd/journald.conf.d
 cat >/etc/systemd/journald.conf.d/heartfulness-remote.conf <<'EOF'
 [Journal]
 MaxRetentionSec=7day
+MaxFileSec=1day
 SystemMaxUse=200M
 EOF
 run systemctl restart systemd-journald
+# Ubuntu's rsyslog would copy the same messages into /var/log/syslog,
+# auth.log, kern.log, ufw.log... and keep them for 4 weeks. Discard them in
+# rsyslog (this drop-in is read before 20-ufw.conf and 50-default.conf) and
+# remove what was written before this ran.
+if [ -d /etc/rsyslog.d ]; then
+	cat >/etc/rsyslog.d/00-heartfulness-remote.conf <<'EOF'
+# Heartfulness Remote: logs are kept only in the systemd journal (7 days,
+# /etc/systemd/journald.conf.d/heartfulness-remote.conf). Discard everything
+# here so nothing is kept for weeks in /var/log/syslog, auth.log, ufw.log...
+*.* stop
+EOF
+	run systemctl try-restart rsyslog.service || true
+	for f in syslog auth.log kern.log mail.log mail.err ufw.log cron.log user.log; do
+		rm -f "/var/log/$f" "/var/log/$f".[0-9]*
+	done
+fi
 
 mkdir -p /etc/docker
 DAEMON_JSON='{
@@ -238,18 +279,33 @@ fi
 # ---------------------------------------------------------------------------
 step "6/9: writing the server configuration (secrets stay on this server)"
 DETECTED_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+valid_ipv4 "$DETECTED_IP" || DETECTED_IP=""
 EXTERNAL_IP="${2:-${HR_EXTERNAL_IP:-}}"
 if [ -n "$EXTERNAL_IP" ] && ! valid_ipv4 "$EXTERNAL_IP"; then
 	status "NOTE: ignoring invalid external IP '$EXTERNAL_IP'"
 	EXTERNAL_IP=""
 fi
-[ -n "$EXTERNAL_IP" ] || EXTERNAL_IP="$DETECTED_IP"
+if [ -z "$EXTERNAL_IP" ]; then
+	if [ -n "$DETECTED_IP" ] && ! private_ipv4 "$DETECTED_IP"; then
+		EXTERNAL_IP="$DETECTED_IP"
+	else
+		# Behind NAT: keep the public address given earlier (deploy-server.sh).
+		EXTERNAL_IP="$(read_kv "$ENV_FILE" HR_EXTERNAL_IP)"
+		valid_ipv4 "$EXTERNAL_IP" || EXTERNAL_IP="$DETECTED_IP"
+	fi
+fi
 if ! valid_ipv4 "$EXTERNAL_IP"; then
 	status "FAILED: could not determine this server's IPv4 address"
 	exit 1
 fi
 if private_ipv4 "$EXTERNAL_IP"; then
-	status "NOTE: this server's address $EXTERNAL_IP is private (behind NAT). The relay may not work until HR_EXTERNAL_IP is set to the public address (scripts/deploy-server.sh does this)."
+	status "NOTE: this server's address $EXTERNAL_IP is private (behind NAT). The relay may not work until the public address is given: run scripts/deploy-server.sh <public-ip> <domain>, or provision.sh <domain> <public-ip>."
+fi
+# coturn's NAT form is "public/private" (relay sockets bind the private one).
+TURN_EXTERNAL_IP="$EXTERNAL_IP"
+if [ -n "$DETECTED_IP" ] && [ "$DETECTED_IP" != "$EXTERNAL_IP" ]; then
+	TURN_EXTERNAL_IP="$EXTERNAL_IP/$DETECTED_IP"
+	status "  behind NAT: relay uses public $EXTERNAL_IP, local $DETECTED_IP"
 fi
 
 TURN_SECRET="$(read_kv "$ENV_FILE" HR_TURN_SECRET)"
@@ -270,7 +326,6 @@ HR_DOMAIN=$DOMAIN
 HR_ORIGIN=https://$DOMAIN
 HR_TURN_SECRET=$TURN_SECRET
 HR_EXTERNAL_IP=$EXTERNAL_IP
-HR_TRUSTED_PROXIES=$CADDY_IP/32
 ACME_EMAIL=$ACME_EMAIL
 HR_HOST_PUBKEY=$HOST_PUBKEY
 EOF
@@ -286,7 +341,7 @@ before_turn="$(sha256sum "$TURN_CONF" 2>/dev/null | cut -d' ' -f1 || true)"
 	tmp="$(mktemp "$DEPLOY_DIR/.turnserver.XXXXXX")"
 	sed -e "s|@HR_TURN_SECRET@|$TURN_SECRET|g" \
 		-e "s|@HR_DOMAIN@|$DOMAIN|g" \
-		-e "s|@HR_EXTERNAL_IP@|$EXTERNAL_IP|g" \
+		-e "s|@HR_EXTERNAL_IP@|$TURN_EXTERNAL_IP|g" \
 		"$DEPLOY_DIR/turnserver.conf.template" >"$tmp"
 	chown "root:$COTURN_GID" "$tmp"
 	chmod 640 "$tmp"

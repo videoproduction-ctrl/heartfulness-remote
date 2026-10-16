@@ -80,6 +80,20 @@ impl<S: SecretStore> DeviceKey<S> {
         Ok(b64::encode(&sk.sign(&data).to_bytes()))
     }
 
+    /// `device_key_reset`: replaces the device identity with a fresh key and
+    /// returns the new public key. Used to pair again after the owner removed
+    /// this device; the new key has no trust until it is approved on the Mac or
+    /// an approved phone (PROTOCOL.md §5), so a reset can never grant access.
+    pub fn reset(&self) -> Result<String, Error> {
+        let _guard = lock(&self.lock);
+        self.store.delete(SEED_ACCOUNT)?;
+        *lock(&self.public) = None;
+        let sk = self.create()?;
+        let pk = sk.verifying_key().to_bytes();
+        *lock(&self.public) = Some(pk);
+        Ok(b64::encode(&pk))
+    }
+
     fn load_or_create(&self) -> Result<SigningKey, Error> {
         let _guard = lock(&self.lock);
         let sk = match self.store.get(SEED_ACCOUNT)? {
