@@ -1,0 +1,208 @@
+docker 28.0.4
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 3.16kB 0.0s done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 ...
+
+#3 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 DONE 0.9s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#4 sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 9.08kB / 9.08kB done
+#4 sha256:7b32114e84ca21aeb2d6f871a0b62b3a0762193f75d9afd048ee4cbe889f3148 1.13kB / 1.13kB done
+#4 sha256:528c92d70d7e39dbb3dd1c6681f6750c565c7e45b70527cda47c1a61495c1b6a 1.41kB / 1.41kB done
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 9.44MB / 14.28MB 0.1s
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.1s done
+#4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s
+#4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s done
+#4 DONE 0.3s
+
+#5 [internal] load metadata for gcr.io/distroless/static-debian12:nonroot
+#5 ...
+
+#6 [auth] library/node:pull token for registry-1.docker.io
+#6 DONE 0.0s
+
+#7 [auth] library/golang:pull token for registry-1.docker.io
+#7 DONE 0.0s
+
+#8 [internal] load metadata for docker.io/library/golang:1.27.2-alpine
+#8 ...
+
+#5 [internal] load metadata for gcr.io/distroless/static-debian12:nonroot
+#5 DONE 0.7s
+
+#9 [internal] load metadata for docker.io/library/node:22.23.3-alpine3.24
+#9 DONE 0.8s
+
+#8 [internal] load metadata for docker.io/library/golang:1.27.2-alpine
+#8 DONE 0.8s
+
+#10 [internal] load .dockerignore
+#10 transferring context: 612B done
+#10 DONE 0.0s
+
+#11 [internal] load build context
+#11 transferring context: 783.73kB 0.0s done
+#11 DONE 0.0s
+
+#12 [stage-2 1/3] FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+#12 resolve gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab done
+#12 sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab 1.51kB / 1.51kB done
+#12 sha256:12aa113e298cbae388b298c0dc163fa1547beba948153b23eb9094e16a07a770 2.73kB / 2.73kB done
+#12 sha256:52dcfbabb7457ea47c82f6e13af8c8a4a1d9f7b0145142b3ecab20f2b888411d 2.67kB / 2.67kB done
+#12 DONE 0.1s
+
+#13 [web 1/7] FROM docker.io/library/node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+#13 resolve docker.io/library/node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 done
+#13 sha256:2c752226d477b4a886378baa95b9af252be59301b725fdb0b7e15208131505a8 1.72kB / 1.72kB done
+#13 sha256:7c3b093add7c43400ee83b815ab2cda98794a10045bcf76ce9bb2f89b97cbc5c 6.48kB / 6.48kB done
+#13 sha256:f7f2d304681aaa935c9cfd180850cf616ae843efce7682873d6521ded7268937 3.15MB / 55.59MB 0.1s
+#13 sha256:e554276b05e6306c5ad33cd85bfa7f0693083e21f6114db5abf60a20fb413039 0B / 1.26MB 0.1s
+#13 sha256:d39db1cf9caa4f49c5a2e67111fbe6e0d5eea8ede550cb82f3dc2b79712688d6 0B / 447B 0.1s
+#13 sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 6.41kB / 6.41kB done
+#13 sha256:f7f2d304681aaa935c9cfd180850cf616ae843efce7682873d6521ded7268937 36.70MB / 55.59MB 0.2s
+#13 sha256:d39db1cf9caa4f49c5a2e67111fbe6e0d5eea8ede550cb82f3dc2b79712688d6 447B / 447B 0.2s done
+#13 sha256:f7f2d304681aaa935c9cfd180850cf616ae843efce7682873d6521ded7268937 55.59MB / 55.59MB 0.3s done
+#13 sha256:e554276b05e6306c5ad33cd85bfa7f0693083e21f6114db5abf60a20fb413039 1.26MB / 1.26MB 0.2s done
+#13 extracting sha256:f7f2d304681aaa935c9cfd180850cf616ae843efce7682873d6521ded7268937
+#13 extracting sha256:f7f2d304681aaa935c9cfd180850cf616ae843efce7682873d6521ded7268937 1.7s done
+#13 extracting sha256:e554276b05e6306c5ad33cd85bfa7f0693083e21f6114db5abf60a20fb413039 0.0s done
+#13 extracting sha256:d39db1cf9caa4f49c5a2e67111fbe6e0d5eea8ede550cb82f3dc2b79712688d6
+#13 extracting sha256:d39db1cf9caa4f49c5a2e67111fbe6e0d5eea8ede550cb82f3dc2b79712688d6 done
+#13 DONE 2.7s
+
+#14 [web 2/7] WORKDIR /src/web
+#14 DONE 0.0s
+
+#15 [web 3/7] COPY server/go.mod we[b]/package.jso[n] we[b]/package-lock.jso[n] ./
+#15 DONE 0.0s
+
+#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+#16 resolve docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d 0.0s done
+#16 sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d 10.29kB / 10.29kB done
+#16 sha256:3b15ba438c60ab8fabe5fee3b11025c0049e358b31feff384648f11fc8e335f8 1.92kB / 1.92kB done
+#16 sha256:0a761904b78c29eba4ec83bd83b7312db1e113dcd92da7fc669843ad9bca56a1 2.19kB / 2.19kB done
+#16 sha256:e2443a591f6296d5e94b53e785f358049a0c73d97e9e0941fcf48cf482f385b8 247.53kB / 247.53kB 0.2s done
+#16 extracting sha256:e2443a591f6296d5e94b53e785f358049a0c73d97e9e0941fcf48cf482f385b8 0.1s done
+#16 sha256:b2b6413ae8f393d11d32262c8dc6bd053dbaea3d074f95edd5605d3eb116e3c2 71.15MB / 71.15MB 0.5s done
+#16 sha256:6ff05f868da7888e9c1d6b4967ff0892cf86b51d23c81149794e72c001604803 126B / 126B 0.4s done
+#16 sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 32B / 32B 0.4s done
+#16 extracting sha256:b2b6413ae8f393d11d32262c8dc6bd053dbaea3d074f95edd5605d3eb116e3c2 2.3s
+#16 ...
+
+#17 [web 4/7] RUN if [ ! -f package.json ]; then       echo "ERROR: web/package.json is missing. The web client must be in web/ (see docs/ARCHITECTURE.md) before the server image can be built." >&2; exit 1;     fi;     if [ ! -f package-lock.json ]; then       echo "ERROR: web/package-lock.json is missing. Run 'npm install' in web/ and commit the lockfile." >&2; exit 1;     fi;     rm -f go.mod
+#17 DONE 0.3s
+
+#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+#16 ...
+
+#18 [web 5/7] RUN --mount=type=secret,id=extra_ca,required=false     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi;     npm ci --no-audit --no-fund --ignore-scripts
+#18 1.634 
+#18 1.634 added 5 packages in 1s
+#18 1.635 npm notice
+#18 1.635 npm notice New major version of npm available! 10.9.9 -> 12.2.0
+#18 1.635 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#18 1.635 npm notice To update run: npm install -g npm@12.2.0
+#18 1.635 npm notice
+#18 DONE 1.9s
+
+#19 [web 6/7] COPY server/go.mod we[b] ./
+#19 DONE 0.0s
+
+#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+#16 ...
+
+#20 [web 7/7] RUN rm -rf go.mod dist && npm run build &&     if [ ! -f dist/index.html ]; then echo "ERROR: 'npm run build' did not produce web/dist/index.html" >&2; exit 1; fi
+#20 0.321 
+#20 0.321 > heartfulness-remote-web@1.0.0 build
+#20 0.321 > node build.mjs
+#20 0.321 
+#20 0.472 
+#20 0.472   dist/app.DW5G3PSK.js   147.7kb
+#20 0.472   dist/app.MT4FFVTG.css   21.0kb
+#20 0.472 
+#20 0.472 ⚡ Done in 38ms
+#20 DONE 0.5s
+
+#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+#16 extracting sha256:b2b6413ae8f393d11d32262c8dc6bd053dbaea3d074f95edd5605d3eb116e3c2 5.6s done
+#16 extracting sha256:6ff05f868da7888e9c1d6b4967ff0892cf86b51d23c81149794e72c001604803
+#16 extracting sha256:6ff05f868da7888e9c1d6b4967ff0892cf86b51d23c81149794e72c001604803 done
+#16 extracting sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 done
+#16 DONE 6.4s
+
+#21 [build 2/9] WORKDIR /src
+#21 DONE 0.0s
+
+#22 [build 3/9] COPY proto/ ./proto/
+#22 DONE 0.0s
+
+#23 [build 4/9] COPY server/go.mod server/go.sum ./server/
+#23 DONE 0.0s
+
+#24 [build 5/9] RUN --mount=type=secret,id=extra_ca,required=false     if [ -f /run/secrets/extra_ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/extra_ca > /tmp/ca.pem; export SSL_CERT_FILE=/tmp/ca.pem; fi;     cd server && go mod download && rm -f /tmp/ca.pem
+#24 DONE 0.6s
+
+#25 [build 6/9] COPY server/ ./server/
+#25 DONE 0.0s
+
+#26 [build 7/9] RUN rm -rf server/internal/webassets/dist
+#26 DONE 0.1s
+
+#27 [build 8/9] COPY --from=web /src/web/dist/ ./server/internal/webassets/dist/
+#27 DONE 0.0s
+
+#28 [build 9/9] RUN cd server && go build -trimpath -ldflags "-s -w" -o /out/heartfulness-server ./cmd/heartfulness-server &&     mkdir -p /out/data
+#28 DONE 15.5s
+
+#29 [stage-2 2/3] COPY --from=build /out/heartfulness-server /heartfulness-server
+#29 DONE 0.1s
+
+#30 [stage-2 3/3] COPY --from=build --chown=65532:65532 /out/data /data
+#30 DONE 0.0s
+
+#31 exporting to image
+#31 exporting layers
+#31 exporting layers 0.6s done
+#31 writing image sha256:e8e443a0de1bbd12f0d32ea4de3d7ed7c42a98051aacb5297f064b7d0ee3add6 done
+#31 naming to docker.io/library/heartfulness-server:ci done
+#31 DONE 0.6s
+user=65532:65532 entrypoint=["/heartfulness-server"] size=12747188
+coturn image: docker.io/coturn/coturn:4.18.0
+ok   docker compose config
+ok   TURN secret only in the server's environment
+Unable to find image 'coturn/coturn:4.18.0' locally
+4.18.0: Pulling from coturn/coturn
+2e19782d7109: Pulling fs layer
+603afa840a83: Pulling fs layer
+66c83ee8316c: Pulling fs layer
+34c79ea33466: Pulling fs layer
+34c79ea33466: Waiting
+66c83ee8316c: Verifying Checksum
+66c83ee8316c: Download complete
+603afa840a83: Verifying Checksum
+603afa840a83: Download complete
+2e19782d7109: Verifying Checksum
+2e19782d7109: Download complete
+34c79ea33466: Verifying Checksum
+34c79ea33466: Download complete
+2e19782d7109: Pull complete
+603afa840a83: Pull complete
+66c83ee8316c: Pull complete
+34c79ea33466: Pull complete
+Digest: sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+Status: Downloaded newer image for coturn/coturn:4.18.0
+ok   coturn starts without configuration warnings
+ok   wrong TURN credentials refused
+ok   valid credentials: allocation + relay to a public address allowed
+ok   relaying to private/reserved addresses refused
+all deployment checks passed
