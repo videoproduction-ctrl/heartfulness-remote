@@ -91,7 +91,8 @@ Online / Offline / Someone connected.
   Steps that must happen **on the Mac** (Xcode build, install to
   ~/Applications, permissions, firewall, SSH deploy to the VPS) are scripted
   in `scripts/` and listed in PROGRESS.md under "Mac-side steps".
-- GitHub owner: `videoproduction-ctrl`, repo `heartfulness-remote` (private).
+- GitHub: https://github.com/videoproduction-ctrl/heartfulness-remote (public).
+  Releases: bump `VERSION`, then `git push origin main:release` (see PROGRESS.md).
 - Architecture and wire protocol: `docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`.
   Any change to signatures/messages must update PROTOCOL.md and the
   cross-language test vectors in `testdata/vectors.json`.
