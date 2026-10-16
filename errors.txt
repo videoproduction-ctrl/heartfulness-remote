@@ -1,0 +1,200 @@
+16-go version go1.27.2 linux/amd64
+17-::group::govulncheck server
+18-=== Symbol Results ===
+19-
+20:No vulnerabilities found.
+21-
+22:Your code is affected by 0 vulnerabilities.
+23:This scan also found 0 vulnerabilities in packages you import and 1
+24:vulnerability in modules you require, but your code doesn't appear to call these
+25:vulnerabilities.
+26-Use '-show verbose' for more details.
+27-::endgroup::
+28-::group::govulncheck agent
+29-=== Symbol Results ===
+30-
+31:No vulnerabilities found.
+32-
+33:Your code is affected by 0 vulnerabilities.
+34:This scan also found 0 vulnerabilities in packages you import and 1
+35:vulnerability in modules you require, but your code doesn't appear to call these
+36:vulnerabilities.
+37-Use '-show verbose' for more details.
+38-::endgroup::
+39:found 0 vulnerabilities
+40-info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+41-info: latest update on 2026-10-15 for version 1.99.1 (58cf8f9c3 2026-10-13)
+42-info: removing previous version of component rustfmt
+43-info: removing previous version of component clippy
+44-info: removing previous version of component cargo
+45-info: removing previous version of component rust-std
+46-info: removing previous version of component rustc
+47-info: downloading 5 components
+48-
+49-  stable-x86_64-unknown-linux-gnu updated - rustc 1.99.1 (58cf8f9c3 2026-10-13) (from rustc 1.99.0 (b940084d7 2026-09-28))
+50-
+51-info: using existing install for stable-x86_64-unknown-linux-gnu
+52-info: default toolchain set to stable-x86_64-unknown-linux-gnu
+53-
+54-  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.1 (58cf8f9c3 2026-10-13)
+55-
+--
+177-  Downloaded writeable v0.6.3
+178-  Downloaded gix-bitmap v0.3.2
+179-  Downloaded cpufeatures v0.2.17
+180-  Downloaded gix-discover v0.52.0
+181:  Downloaded gix-error v0.2.4
+182-  Downloaded gix-fs v0.21.2
+183-  Downloaded rustversion v1.0.22
+184-  Downloaded find-msvc-tools v0.1.9
+185-  Downloaded fs-err v3.3.0
+186-  Downloaded rand_core v0.9.5
+187-  Downloaded version_check v0.9.5
+188-  Downloaded rustls-native-certs v0.8.3
+189:  Downloaded thiserror-impl v2.0.18
+190-  Downloaded toml_writer v1.1.1+spec-1.1.0
+191-  Downloaded strsim v0.11.1
+192-  Downloaded try-lock v0.2.5
+193-  Downloaded clru v0.6.3
+194-  Downloaded gix-commitgraph v0.37.1
+195-  Downloaded home v0.5.12
+196-  Downloaded shell-words v1.1.1
+197-  Downloaded hash32 v0.3.1
+198-  Downloaded io-close v0.3.7
+199-  Downloaded powerfmt v0.2.0
+200-  Downloaded fs_extra v1.3.0
+201-  Downloaded gix-pathspec v0.18.1
+202-  Downloaded crossbeam-utils v0.8.21
+203-  Downloaded quote v1.0.45
+204-  Downloaded smol_str v0.3.2
+205-  Downloaded ident_case v1.0.1
+--
+213-  Downloaded indenter v0.3.4
+214-  Downloaded quitters v0.1.0
+215-  Downloaded compression-codecs v0.4.38
+216-  Downloaded deranged v0.5.8
+217:  Downloaded display-error-chain v0.2.2
+218-  Downloaded gix-date v0.15.4
+219-  Downloaded rustc-stable-hash v0.1.2
+220-  Downloaded serde_spanned v1.1.1
+221-  Downloaded simd-adler32 v0.3.9
+222-  Downloaded tinystr v0.8.3
+223-  Downloaded http-body-util v0.1.3
+224-  Downloaded ppv-lite86 v0.2.21
+225-  Downloaded smallvec v1.15.1
+226-  Downloaded tempfile v3.27.0
+227-  Downloaded zerofrom v0.1.7
+228-  Downloaded subtle v2.6.1
+229-  Downloaded gix-glob v0.26.1
+230-  Downloaded nu-ansi-term v0.50.3
+231-  Downloaded gix-worktree v0.53.0
+232-  Downloaded zeroize v1.8.2
+233-  Downloaded gix-submodule v0.31.0
+--
+342-  Downloaded zerofrom-derive v0.1.7
+343-  Downloaded gimli v0.32.3
+344-  Downloaded shlex v1.3.0
+345-  Downloaded toml_datetime v0.7.5+spec-1.1.0
+346:  Downloaded thiserror v2.0.18
+347-  Downloaded rayon-core v1.13.0
+348-  Downloaded sync_wrapper v1.0.2
+349-  Downloaded tower v0.5.3
+350-  Downloaded socket2 v0.6.3
+351-  Downloaded tokio v1.52.3
+352-  Downloaded jiff v0.2.28
+353-  Downloaded libc v0.2.186
+354-  Downloaded prodash v31.0.0
+355-  Downloaded petgraph v0.8.3
+356-  Downloaded typenum v1.20.0
+357-  Downloaded futures-util v0.3.32
+358-  Downloaded tower-http v0.6.10
+359-  Downloaded url v2.5.8
+360-  Downloaded reqwest v0.13.3
+361-  Downloaded winnow v1.0.2
+362-  Downloaded clap_builder v4.6.0
+--
+393-   Compiling bytes v1.11.1
+394-   Compiling regex-automata v0.4.14
+395-   Compiling bstr v1.12.1
+396-   Compiling stable_deref_trait v1.2.1
+397:   Compiling thiserror v2.0.18
+398:   Compiling thiserror-impl v2.0.18
+399-   Compiling crc32fast v1.5.0
+400-   Compiling crossbeam-utils v0.8.21
+401-   Compiling gix-trace v0.1.20
+402-   Compiling tinyvec_macros v0.1.1
+403-   Compiling tinyvec v1.11.0
+404-   Compiling gix-validate v0.11.2
+405-   Compiling fastrand v2.4.1
+406-   Compiling parking_lot_core v0.9.12
+407-   Compiling bitflags v2.11.1
+408-   Compiling gix-path v0.12.1
+409-   Compiling unicode-normalization v0.1.25
+410-   Compiling scopeguard v1.2.0
+411-   Compiling itoa v1.0.18
+412-   Compiling lock_api v0.4.14
+413-   Compiling gix-utils v0.3.3
+414-   Compiling crossbeam-channel v0.5.15
+--
+419-   Compiling same-file v1.0.6
+420-   Compiling walkdir v2.5.0
+421-   Compiling prodash v31.0.0
+422-   Compiling zlib-rs v0.6.3
+423:   Compiling gix-error v0.2.4
+424-   Compiling version_check v0.9.5
+425-   Compiling generic-array v0.14.7
+426-   Compiling hashbrown v0.17.1
+427-   Compiling typenum v1.20.0
+428-   Compiling byteorder v1.5.0
+429-   Compiling serde_core v1.0.228
+430-   Compiling heapless v0.8.0
+431-   Compiling hash32 v0.3.1
+432-   Compiling gix-features v0.48.1
+433-   Compiling block-buffer v0.10.4
+434-   Compiling crypto-common v0.1.7
+435-   Compiling digest v0.10.7
+436-   Compiling faster-hex v0.10.0
+437-   Compiling synstructure v0.13.2
+438-   Compiling cpufeatures v0.2.17
+439-   Compiling jiff v0.2.28
+--
+667-   Compiling home v0.5.12
+668-   Compiling termcolor v1.4.1
+669-   Compiling canonical-path v2.0.2
+670-   Compiling abscissa_core v0.9.0
+671:   Compiling display-error-chain v0.2.2
+672-   Compiling rustls-webpki v0.103.13
+673-   Compiling tokio-rustls v0.26.4
+674-   Compiling rustls-platform-verifier v0.7.0
+675-   Compiling hyper-rustls v0.27.9
+676-   Compiling reqwest v0.13.3
+677-   Compiling gix-transport v0.57.1
+678-   Compiling tame-index v0.26.3
+679-   Compiling gix-protocol v0.62.0
+680-   Compiling gix v0.84.0
+681-   Compiling rustsec v0.33.0
+682-   Compiling cargo-audit v0.22.2
+683-    Finished `release` profile [optimized] target(s) in 2m 46s
+684-  Installing /home/runner/.cargo/bin/cargo-audit
+685-   Installed package `cargo-audit v0.22.2` (executable `cargo-audit`)
+686-    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+687-      Loaded 1329 security advisories (from /home/runner/.cargo/advisory-db)
+688-    Updating crates.io index
+689:    Scanning Cargo.lock for vulnerabilities (482 crate dependencies)
+690:Crate:     proc-macro-error
+691-Version:   1.0.4
+692-Warning:   unmaintained
+693:Title:     proc-macro-error is unmaintained
+694-Date:      2024-09-01
+695-ID:        RUSTSEC-2024-0370
+696-URL:       https://rustsec.org/advisories/RUSTSEC-2024-0370
+697-
+698-Crate:     glib
+699-Version:   0.18.5
+700-Warning:   unsound
+701-Title:     Unsoundness in `Iterator` and `DoubleEndedIterator` impls for `glib::VariantStrIter`
+702-Date:      2024-03-30
+703-ID:        RUSTSEC-2024-0429
+704-URL:       https://rustsec.org/advisories/RUSTSEC-2024-0429
+705-
+706-warning: 2 allowed warnings found
