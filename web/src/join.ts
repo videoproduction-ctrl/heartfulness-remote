@@ -150,7 +150,7 @@ export async function finishJoin(deps: JoinDeps, p: PreparedJoin, abort?: AbortS
   }
   if (msg["type"] === "error") {
     const code = typeof msg["code"] === "string" ? msg["code"] : "";
-    throw joinApiError(new ApiError(409, code, `The Mac couldn't be added (${/^[\w-]{1,40}$/.test(code) ? code : "error"}). Please try again.`));
+    throw joinApiError(new ApiError(0, code, `The Mac couldn't be added (${/^[\w-]{1,40}$/.test(code) ? code : "error"}). Please try again.`));
   }
   return verifyHostJoined(msg, p.hostPub, deps.devicePub, p.ka);
 }

@@ -38,8 +38,9 @@ func TestHostAuth(t *testing.T) {
 	if r["type"] != "host-ready" || r["claimed"] != false || r["joined"] != false || r["origin"] != testOrigin || r["macId"] != proto.MacID(good.pub) {
 		t.Fatalf("good host: %v", r)
 	}
-	if ice := r["iceServers"].([]any); len(ice) != 2 {
-		t.Fatalf("host iceServers: %v", ice)
+	// TURN credentials only go to Macs bound to the owner (any key may wait).
+	if ice := r["iceServers"].([]any); len(ice) != 0 {
+		t.Fatalf("unbound host got iceServers: %v", ice)
 	}
 
 	// Signature by another key.
@@ -137,9 +138,13 @@ func TestHostAuthAfterClaim(t *testing.T) {
 		t.Fatalf("waiting Mac in /api/me: %v", hosts)
 	}
 
-	// The bound Mac reconnecting replaces its old connection.
+	if r := newJoinHost(t, "x").connect(e, "203.0.113.51", testOrigin, true); len(r["iceServers"].([]any)) != 0 {
+		t.Fatalf("waiting Mac got TURN credentials: %v", r)
+	}
+
+	// The bound Mac reconnecting replaces its old connection (and gets TURN).
 	again := h.again()
-	if r := again.connect(e, "203.0.113.1", testOrigin, false); r["type"] != "host-ready" || r["claimed"] != true || r["joined"] != true {
+	if r := again.connect(e, "203.0.113.1", testOrigin, false); r["type"] != "host-ready" || r["claimed"] != true || r["joined"] != true || len(r["iceServers"].([]any)) != 2 {
 		t.Fatalf("reconnect: %v", r)
 	}
 	h.expectError("replaced")

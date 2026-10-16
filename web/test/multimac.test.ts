@@ -42,6 +42,7 @@ import {
   sessionRequestMsg,
 } from "../src/messages";
 import { type KV, legacyPinKey, PinStore, pinsKey } from "../src/pins";
+import { serverRefusalText } from "../src/rtc";
 import { parseReady } from "../src/signal";
 import { macStatus } from "../src/views/home";
 import { signerFromSeed } from "./helpers";
@@ -394,9 +395,14 @@ test("hosts API: pending lookup, join begin/finish and remove send the §10.2 sh
     if (path === "/api/hosts/join/begin") return { json: { flowId: "f1", name: "Studio Mac", macId: J.macId } };
     return { json: { ok: true } };
   });
-  assert.deepEqual(await api.hostsPending(J.macId), { hostPub: V.hostPub, name: "Studio Mac" });
-  assert.deepEqual(calls[0], { path: `/api/hosts/pending?macId=${J.macId}`, method: "GET", body: undefined });
-  await assert.rejects(api.hostsPending("12 3"), /9 digits/);
+  assert.deepEqual(await api.hostsPending(PROOF, J.macId), { hostPub: V.hostPub, name: "Studio Mac" });
+  // A GET: the device proof travels in the query string.
+  const q = new URLSearchParams(calls[0]!.path.split("?")[1]);
+  assert.equal(calls[0]!.path.split("?")[0], "/api/hosts/pending");
+  assert.equal(calls[0]!.method, "GET");
+  assert.equal(calls[0]!.body, undefined);
+  assert.deepEqual(Object.fromEntries(q), { macId: J.macId, ...PROOF });
+  await assert.rejects(api.hostsPending(PROOF, "12 3"), /9 digits/);
   assert.deepEqual(await api.joinBegin(PROOF, V.hostPub, J.kc), { flowId: "f1", name: "Studio Mac", macId: J.macId });
   assert.deepEqual(calls[1], { path: "/api/hosts/join/begin", method: "POST", body: { hostPub: V.hostPub, claim: J.kc, ...PROOF } });
   await api.joinFinish(PROOF, "f1", J.setupMac);
@@ -405,7 +411,7 @@ test("hosts API: pending lookup, join begin/finish and remove send the §10.2 sh
   assert.deepEqual(calls[3], { path: "/api/hosts/remove", method: "POST", body: { hostPub: V.hostPub, ...PROOF } });
 
   const bad = fakeApi(() => ({ json: { hostPub: "nope" } }));
-  await assert.rejects(bad.api.hostsPending(J.macId), ApiError);
+  await assert.rejects(bad.api.hostsPending(PROOF, J.macId), ApiError);
 });
 
 // ------------------------------------------------------------------ join flow
@@ -414,6 +420,7 @@ interface FakeOpts {
   pendingHost?: string;
   pendingStatus?: number;
   beginStatus?: number;
+  beginCode?: string;
   finishReply?: Record<string, unknown>;
   joined?: Record<string, unknown> | "timeout";
 }
@@ -421,18 +428,19 @@ interface FakeOpts {
 function joinDeps(o: FakeOpts = {}) {
   const seen: Record<string, unknown> = {};
   let proofs = 0;
-  const err = (status: number) => new ApiError(status, "x", `HTTP ${status}`);
+  const err = (status: number, code = "x") => new ApiError(status, code, `HTTP ${status}`);
   const deps: JoinDeps = {
     api: {
-      async hostsPending(id: string) {
+      async hostsPending(proof: DeviceProof, id: string) {
         seen["pendingId"] = id;
-        if (o.pendingStatus) throw err(o.pendingStatus);
+        seen["pendingProof"] = proof;
+        if (o.pendingStatus) throw err(o.pendingStatus, o.pendingStatus === 404 ? "not-found" : "x");
         return { hostPub: o.pendingHost ?? V.hostPub, name: "Studio Mac" };
       },
       async joinBegin(_p: DeviceProof, hp: string, claim: string) {
         seen["beginHost"] = hp;
         seen["claim"] = claim;
-        if (o.beginStatus) throw err(o.beginStatus);
+        if (o.beginStatus) throw err(o.beginStatus, o.beginCode);
         return { flowId: "flow-1", name: "Studio Mac", macId: J.macId };
       },
       async joinFinish(_p: DeviceProof, flowId: string, mac: string) {
@@ -460,7 +468,8 @@ function joinDeps(o: FakeOpts = {}) {
 
 test("typed join: Mac ID checked locally, claim = Kc, setupMac with Ka, cert + hostMac verified", async () => {
   const { deps, seen, proofs } = joinDeps();
-  const found = await findPendingMac(deps.api, J.macId);
+  const found = await findPendingMac(deps, J.macId);
+  assert.deepEqual(seen["pendingProof"], PROOF);
   assert.equal(b64(found.hostPub), V.hostPub);
   assert.equal(found.macId, J.macId);
   const t = parseJoinCode(J.code.toLowerCase().replace(/-/g, " "));
@@ -473,14 +482,17 @@ test("typed join: Mac ID checked locally, claim = Kc, setupMac with Ka, cert + h
   assert.equal(seen["flowId"], "flow-1");
   assert.equal(seen["waitedFor"], V.hostPub);
   assert.equal(cert.devicePub, V.devicePub);
-  assert.equal(proofs(), 2, "a fresh device proof per request");
+  assert.equal(proofs(), 3, "a fresh device proof per request");
 });
 
 test("typed join: a server answering with another key (Mac ID mismatch) or 404 is refused", async () => {
-  await assert.rejects(findPendingMac(joinDeps({ pendingHost: V.devicePub }).deps.api, J.macId), (e: unknown) => e instanceof JoinError && e.code === "mac-id-mismatch");
-  await assert.rejects(findPendingMac(joinDeps({ pendingStatus: 404 }).deps.api, J.macId), (e: unknown) => e instanceof JoinError && e.code === "not-found");
-  const { deps } = joinDeps({ beginStatus: 403 });
+  await assert.rejects(findPendingMac(joinDeps({ pendingHost: V.devicePub }).deps, J.macId), (e: unknown) => e instanceof JoinError && e.code === "mac-id-mismatch");
+  await assert.rejects(findPendingMac(joinDeps({ pendingStatus: 404 }).deps, J.macId), (e: unknown) => e instanceof JoinError && e.code === "not-found");
+  const { deps } = joinDeps({ beginStatus: 403, beginCode: "bad-claim" });
   await assert.rejects(beginJoin(deps, hostPub, unb64(J.t)), (e: unknown) => e instanceof JoinError && e.code === "bad-code");
+  await assert.rejects(beginJoin(joinDeps({ beginStatus: 403, beginCode: "device-not-approved" }).deps, hostPub, unb64(J.t)), /approved on one of your Macs/);
+  await assert.rejects(beginJoin(joinDeps({ beginStatus: 409, beginCode: "already-joined" }).deps, hostPub, unb64(J.t)), /already in your account/);
+  await assert.rejects(beginJoin(joinDeps({ beginStatus: 409, beginCode: "too-many-hosts" }).deps, hostPub, unb64(J.t)), /20 Macs/);
   await assert.rejects(beginJoin(joinDeps({ beginStatus: 410 }).deps, hostPub, unb64(J.t)), (e: unknown) => e instanceof JoinError && e.code === "expired");
   await assert.rejects(beginJoin(joinDeps({ beginStatus: 500 }).deps, hostPub, unb64(J.t)), ApiError);
 });
@@ -497,6 +509,9 @@ test("join: a forged or missing hostMac, or a cert for someone else, is never ac
   await assert.rejects(run({ hostPub: V.devicePub, cert: V.cert, hostMac: J.hostMac }), /different Mac/);
   await assert.rejects(run({ hostPub: V.hostPub, cert: { ...V.cert, name: "Someone else" }, hostMac: J.hostMac }), /signature/);
   await assert.rejects(run("timeout"), (e: unknown) => e instanceof JoinError && e.code === "timeout");
+  // The server reports a failed join on the WebSocket: error {for:"join", hostPub}.
+  await assert.rejects(run({ type: "error", code: "too-many-hosts", for: "join", hostPub: V.hostPub }), /20 Macs/);
+  await assert.rejects(run({ type: "error", code: "internal", for: "join", hostPub: V.hostPub }), /couldn't be added \(internal\)/);
   // A server may return the confirmation in the HTTP reply instead.
   const { deps } = joinDeps({ finishReply: { hostPub: V.hostPub, cert: V.cert, hostMac: J.hostMac }, joined: "timeout" });
   const cert = await finishJoin(deps, await beginJoin(deps, hostPub, unb64(J.t)));
@@ -505,4 +520,9 @@ test("join: a forged or missing hostMac, or a cert for someone else, is never ac
   const ka = unb64(J.ka);
   await verifyHostJoined({ cert: V.cert, hostMac: J.hostMac }, hostPub, devicePub, ka);
   await assert.rejects(verifyHostJoined({ cert: V.cert, hostMac: J.hostMac }, hostPub, devicePub, unb64(J.kc)));
+});
+
+test("server refusals of a session request are explained", () => {
+  const generic = serverRefusalText("???");
+  for (const c of ["host-offline", "not-approved", "unknown-host", "duplicate-session"]) assert.notEqual(serverRefusalText(c), generic, c);
 });

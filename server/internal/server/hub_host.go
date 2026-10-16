@@ -63,8 +63,14 @@ func (h *hub) onHost(c *conn, m *inMsg) bool {
 	return true
 }
 
+// hostReady builds host-ready (§10.4). TURN credentials go only to Macs bound
+// to the owner: any key may wait to join, and must not get relay access.
 func (h *hub) hostReady(c *conn, claimed, joined bool) msg {
-	return msg{"type": "host-ready", "claimed": claimed, "joined": joined, "origin": h.s.cfg.Origin, "macId": c.macID, "iceServers": h.s.iceServers()}
+	ice := []ICEServer{}
+	if joined {
+		ice = h.s.iceServers()
+	}
+	return msg{"type": "host-ready", "claimed": claimed, "joined": joined, "origin": h.s.cfg.Origin, "macId": c.macID, "iceServers": ice}
 }
 
 // hostAuth authenticates a Mac. A key bound to the owner becomes an online

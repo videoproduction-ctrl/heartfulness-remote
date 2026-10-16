@@ -50,6 +50,23 @@ export function rejectText(reason: unknown): string {
   }
 }
 
+/** Plain-language text for a server error answering session-request (server hub_client.go). */
+export function serverRefusalText(code: unknown): string {
+  switch (code) {
+    case "host-offline":
+      return "This Mac is offline. Make sure it's on and running Heartfulness Remote, then try again.";
+    case "not-approved":
+      return "This Mac doesn't trust this device yet. Ask for access on the Home screen.";
+    case "unknown-host":
+      return "This Mac is no longer part of your account.";
+    case "duplicate-session":
+    case "too-many-sessions":
+      return "A connection to this Mac is already being set up. Wait a moment and try again.";
+    default:
+      return "Your Mac couldn't start the session. Please try again.";
+  }
+}
+
 /** Plain-language text for a "bye" / "session-end" reason (agent session.go, server hub.go). */
 export function byeText(reason: unknown): string {
   switch (reason) {
@@ -207,7 +224,13 @@ export class RemoteSession {
     const req = sessionRequestMsg(this.hostPub, this.sid, signer.pub, this.clientNonce, !!this.deps.relayOnly);
     if (!sig.send(req)) throw new Error("Not connected to the server.");
 
-    const acc = await waitFor(sig, ["session-accept", "session-reject"], this.own, ACCEPT_TIMEOUT_MS, this.abort.signal);
+    // The server answers a request it can't route with error {for:"session-request", hostPub}.
+    const refused = (m: Msg) => m.type === "error" && m["for"] === "session-request" && aboutMac(m, this.hostPub);
+    const acc = await waitFor(sig, ["session-accept", "session-reject", "error"], (m) => (m.type === "error" ? refused(m) : this.own(m)), ACCEPT_TIMEOUT_MS, this.abort.signal);
+    if (acc.type === "error") {
+      this.end("rejected", serverRefusalText(acc["code"]), false);
+      return;
+    }
     if (acc.type === "session-reject") {
       this.end("rejected", rejectText(acc["reason"]), false);
       return;

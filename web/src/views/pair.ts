@@ -54,6 +54,8 @@ export function pairErrorText(code: unknown): string {
       return "Too many devices are waiting for approval right now. Approve or deny them first, then try again.";
     case "rate-limited":
       return "Too many attempts. Please wait a few minutes and try again.";
+    case "unknown-host":
+      return "This Mac is no longer part of your account.";
     default:
       return `Your Mac couldn't be reached (${typeof code === "string" && /^[\w-]{1,40}$/.test(code) ? code : "error"}). Please try again.`;
   }
@@ -148,9 +150,10 @@ export function pairView(app: App, target: string | null): View {
       );
       // Only errors about OUR pairing (pair-start errors, or ones naming our requestId) abort it.
       const ours = (m: Msg) =>
-        m.type === "pair-denied"
-          ? mine(m) && (requestId === null || m["requestId"] === undefined || m["requestId"] === requestId)
-          : m["for"] === "pair-start" || (requestId !== null && m["requestId"] === requestId);
+        mine(m) &&
+        (m.type === "pair-denied"
+          ? requestId === null || m["requestId"] === undefined || m["requestId"] === requestId
+          : m["for"] === "pair-start" || (requestId !== null && m["requestId"] === requestId));
       const failure = waitFor(sig, ["pair-denied", "error"], ours, APPROVAL_TIMEOUT_MS + CHALLENGE_TIMEOUT_MS, ac.signal).then(
         (m) => Promise.reject(m),
         () => new Promise<never>(() => undefined),

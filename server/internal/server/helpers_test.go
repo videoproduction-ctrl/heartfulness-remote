@@ -501,7 +501,7 @@ func (e *testEnv) claim() (*fakeHost, *client, *softAuthn, *device) {
 	if r.code != 200 || phone.cookie == "" {
 		t.Fatalf("setup/finish: %d %s", r.code, r.body)
 	}
-	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true || hr["macId"] != h.macID() {
+	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true || hr["macId"] != h.macID() || len(hr["iceServers"].([]any)) != 2 {
 		t.Fatalf("host-ready after claim: %v", hr)
 	}
 	ready := dev.connect(e, phone, "")
@@ -599,7 +599,7 @@ func (e *testEnv) join(h *fakeHost, hostIP string, c *client, d *device) {
 		t.Fatalf("join/finish: %d %s", r.code, r.body)
 	}
 	h.answerSetup(t)
-	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true {
+	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true || len(hr["iceServers"].([]any)) != 2 {
 		t.Fatalf("host-ready after join: %v", hr)
 	}
 	hj := d.expect("host-joined")
