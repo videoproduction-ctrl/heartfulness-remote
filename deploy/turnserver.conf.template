@@ -1,5 +1,5 @@
-# coturn configuration for Heartfulness Remote.
-# deploy/provision.sh renders this template into deploy/turnserver.conf (mode
+# coturn configuration for Heartfulness Remote (written for coturn 4.18; the
+# version is pinned in docker-compose.yml). deploy/provision.sh renders this template into deploy/turnserver.conf (mode
 # 0640, git-ignored) with the secret from deploy/.env. Do not put secrets here.
 #
 # coturn only relays already-encrypted WebRTC packets (DTLS-SRTP); it never
@@ -7,11 +7,10 @@
 
 listening-port=3478
 # No TLS/DTLS listener: media is end-to-end encrypted by WebRTC already and no
-# certificate is configured for coturn. (coturn 4.7 removed the old
-# no-tlsv1/no-tlsv1_1 flags: TLS 1.0/1.1 are off by default and only an
-# explicit "tlsv1"/"tlsv1_1" would turn them back on — never set those.)
+# certificate is configured for coturn. Since coturn 4.17 DTLS listeners start
+# only with an explicit "dtls" option (so the old "no-dtls" is gone); TLS
+# 1.0/1.1 are off unless "tlsv1"/"tlsv1_1" is set — never set those.
 no-tls
-no-dtls
 
 # The server's public IPv4 address, or "public/private" when the VPS sits
 # behind 1:1 NAT (provision.sh decides; it never asks a third-party service).
@@ -80,13 +79,12 @@ denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fe80::-feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=ff00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 
-# Hardening. In coturn 4.7, legacy STUN backward compatibility, RFC 5780 and
-# the SOFTWARE attribute are already off by default (the old
-# "no-stun-backward-compatibility" flag was removed; never set
-# "stun-backward-compatibility" or "rfc5780").
-no-cli
-no-rfc5780
-no-software-attribute
+# Hardening. In coturn 4.18 these are off by default and must stay off: the
+# telnet admin CLI (only "cli" turns it on), legacy STUN backward
+# compatibility, RFC 5780 NAT-behaviour discovery and the SOFTWARE attribute
+# (never set "cli", "stun-backward-compatibility", "rfc5780" or
+# "software-attribute"). Link-local/ULA/site-local peers are also refused by
+# default since 4.13.1; the explicit denied-peer-ip list above stays anyway.
 no-dynamic-ip-list
 no-dynamic-realms
 no-auth-pings

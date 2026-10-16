@@ -292,6 +292,43 @@ func TestLoginWrongSignatureCountsAsFailure(t *testing.T) {
 	}
 }
 
+// A passkey whose signature counter goes backwards (a cloned or replayed
+// authenticator) is refused, and the stored counter is not lowered.
+func TestLoginRejectsCounterGoingBackwards(t *testing.T) {
+	e := newEnv(t, nil)
+	_, _, authn, _ := e.claim()
+	for i := 0; i < 3; i++ {
+		e.login(authn, "198.51.100.70") // counter 1, 2, 3
+	}
+	storedCount := func() uint32 {
+		var n uint32
+		e.st.View(func(st *storeState) { n = st.Owner.Passkeys[0].Credential.Authenticator.SignCount })
+		return n
+	}
+	if storedCount() != 3 {
+		t.Fatalf("stored sign count %d, want 3", storedCount())
+	}
+	clone := *authn
+	clone.counter = 1 // next assertion carries 2 <= 3
+	c := e.client("198.51.100.71")
+	b := c.post("/api/login/begin", nil).json(t)
+	opts, _ := json.Marshal(b["options"])
+	r := c.post("/api/login/finish", map[string]any{"flowId": b["flowId"], "credential": json.RawMessage(clone.get(t, opts, e.cfg.Origin, false))})
+	if r.code != http.StatusUnauthorized || c.cookie != "" || str(r.json(t), "error") != "webauthn-failed" {
+		t.Fatalf("cloned authenticator accepted: %d %s", r.code, r.body)
+	}
+	if e.failures(c.ip) != 1 {
+		t.Fatalf("clone attempt not counted as an auth failure: %d", e.failures(c.ip))
+	}
+	if storedCount() != 3 {
+		t.Fatalf("stored sign count changed to %d", storedCount())
+	}
+	// The genuine authenticator (counter 4) still works.
+	if e.login(authn, "198.51.100.72").get("/api/me").code != 200 {
+		t.Fatal("genuine authenticator refused after clone attempt")
+	}
+}
+
 func TestLogout(t *testing.T) {
 	e := newEnv(t, nil)
 	_, phone, _, dev := e.claim()
