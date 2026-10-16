@@ -82,9 +82,10 @@ func loadIVF(b []byte) (*Video, error) {
 	return src, nil
 }
 
-// SplitH264 groups an Annex-B stream into access units, one per coded slice
-// (the test files use one slice per frame), each re-emitted with 4-byte start
-// codes. Parameter sets and SEI are attached to the following slice.
+// SplitH264 groups an Annex-B stream into access units (one per picture),
+// each re-emitted with 4-byte start codes. A new access unit starts at a
+// slice whose first_mb_in_slice is 0, or at an AUD/SPS/PPS/SEI that follows
+// a slice (H.264 §7.4.1.2.3).
 func SplitH264(b []byte) ([]Frame, error) {
 	r, err := h264reader.NewReader(bytes.NewReader(b))
 	if err != nil {
@@ -92,7 +93,13 @@ func SplitH264(b []byte) ([]Frame, error) {
 	}
 	var out []Frame
 	var cur []byte
-	key := false
+	key, hasVCL := false, false
+	flush := func() {
+		if hasVCL {
+			out = append(out, Frame{Key: key, Data: cur})
+		}
+		cur, key, hasVCL = nil, false, false
+	}
 	for {
 		nal, err := r.NextNAL()
 		if errors.Is(err, io.EOF) {
@@ -101,17 +108,25 @@ func SplitH264(b []byte) ([]Frame, error) {
 		if err != nil {
 			return nil, err
 		}
+		switch nal.UnitType {
+		case h264reader.NalUnitTypeCodedSliceIdr, h264reader.NalUnitTypeCodedSliceNonIdr:
+			// first_mb_in_slice is ue(v); its first bit is 1 iff it is 0.
+			if hasVCL && len(nal.Data) > 1 && nal.Data[1]&0x80 != 0 {
+				flush()
+			}
+			hasVCL = true
+			if nal.UnitType == h264reader.NalUnitTypeCodedSliceIdr {
+				key = true
+			}
+		case h264reader.NalUnitTypeAUD, h264reader.NalUnitTypeSPS, h264reader.NalUnitTypePPS, h264reader.NalUnitTypeSEI:
+			if hasVCL {
+				flush()
+			}
+		}
 		cur = append(cur, 0, 0, 0, 1)
 		cur = append(cur, nal.Data...)
-		switch nal.UnitType {
-		case h264reader.NalUnitTypeCodedSliceIdr:
-			key = true
-			fallthrough
-		case h264reader.NalUnitTypeCodedSliceNonIdr:
-			out = append(out, Frame{Key: key, Data: cur})
-			cur, key = nil, false
-		}
 	}
+	flush()
 	if len(out) == 0 || !out[0].Key {
 		return nil, errors.New("H.264 stream must start with an IDR frame")
 	}

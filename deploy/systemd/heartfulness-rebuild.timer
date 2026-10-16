@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Heartfulness Remote security rebuild (same code, fresh base images)
+
+[Timer]
+# Sundays 20:30 UTC (Monday 02:00 in India), up to 30 minutes later at random.
+OnCalendar=Sun *-*-* 20:30:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

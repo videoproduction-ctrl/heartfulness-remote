@@ -1,0 +1,119 @@
+#cloud-config
+#
+# Heartfulness Remote: automatic server setup
+#
+# 1. On the next line that starts with "HR_DOMAIN=", replace YOUR-NAME.dedyn.io
+#    with your own address. Keep the spaces at the start of the line.
+#    (Optional: put your e-mail after "ACME_EMAIL=" for certificate reminders.)
+# 2. Paste this whole file into the "Cloud config" / "User data" box when you
+#    create an Ubuntu 24.04 server. Nothing else to do: setup runs by itself
+#    and takes about 10 minutes. No password or key goes in this file.
+write_files:
+  - path: /etc/heartfulness-remote/domain
+    owner: root:root
+    permissions: "0644"
+    content: |
+      HR_DOMAIN=YOUR-NAME.dedyn.io
+      ACME_EMAIL=
+
+  # ---- Nothing below this line needs to be changed. ----
+  - path: /usr/local/sbin/heartfulness-remote-bootstrap
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Downloads Heartfulness Remote and runs deploy/provision.sh.
+      # Runs at every boot until setup has succeeded once.
+      set -u
+      LOG=/var/log/heartfulness-remote-setup.log
+      REPO_URL=https://github.com/videoproduction-ctrl/heartfulness-remote
+      DIR=/opt/heartfulness-remote
+      PARTIAL=/opt/heartfulness-remote.partial
+      DONE=/var/lib/heartfulness-remote/setup-complete
+      export DEBIAN_FRONTEND=noninteractive
+
+      say() {
+        local line
+        line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+        echo "$line" >>"$LOG"
+        echo "Heartfulness Remote: $line"
+      }
+
+      mkdir -p /var/lib/heartfulness-remote
+      say "setup started"
+
+      if ! command -v git >/dev/null 2>&1; then
+        for attempt in 1 2 3 4 5; do
+          if apt-get -q -o DPkg::Lock::Timeout=600 update >>"$LOG" 2>&1 &&
+             apt-get -y -q -o DPkg::Lock::Timeout=600 install git ca-certificates >>"$LOG" 2>&1; then
+            break
+          fi
+          say "installing git failed (attempt $attempt of 5); retrying in 30 seconds"
+          sleep 30
+        done
+      fi
+      if ! command -v git >/dev/null 2>&1; then
+        say "ERROR: could not install git. Check that the server has internet access, then restart (reboot) the server to try again."
+        exit 1
+      fi
+
+      if [ ! -d "$DIR/.git" ]; then
+        delay=10
+        deadline=$(( $(date +%s) + 900 ))
+        attempt=1
+        while :; do
+          rm -rf -- "$PARTIAL"
+          if git clone --quiet --depth 1 "$REPO_URL" "$PARTIAL" >>"$LOG" 2>&1; then
+            rm -rf -- "$DIR"
+            mv -- "$PARTIAL" "$DIR"
+            say "downloaded $REPO_URL ($(git -C "$DIR" rev-parse --short HEAD))"
+            break
+          fi
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            say "ERROR: could not download $REPO_URL for 15 minutes. Check that the GitHub repository is public and that the server has internet access, then restart (reboot) the server to try again."
+            exit 1
+          fi
+          say "could not download $REPO_URL yet (attempt $attempt); retrying in $delay seconds"
+          sleep "$delay"
+          attempt=$((attempt + 1))
+          delay=$((delay * 2))
+          if [ "$delay" -gt 120 ]; then delay=120; fi
+        done
+      fi
+
+      if bash "$DIR/deploy/provision.sh"; then
+        touch "$DONE"
+        say "setup finished"
+      else
+        say "ERROR: setup did not finish. Details are in $LOG and /var/log/heartfulness-remote-provision.log. Restart (reboot) the server to try again."
+        exit 1
+      fi
+
+  - path: /etc/systemd/system/heartfulness-remote-setup.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Heartfulness Remote first-time setup (retries at boot until it succeeds)
+      Wants=network-online.target
+      After=network-online.target
+      ConditionPathExists=!/var/lib/heartfulness-remote/setup-complete
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/heartfulness-remote-bootstrap
+      StandardOutput=journal+console
+      StandardError=journal+console
+      TimeoutStartSec=2h
+
+      [Install]
+      WantedBy=multi-user.target
+
+packages:
+  - git
+  - ca-certificates
+
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, heartfulness-remote-setup.service]
+  - [systemctl, start, --no-block, heartfulness-remote-setup.service]

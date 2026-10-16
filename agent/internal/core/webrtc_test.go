@@ -42,7 +42,7 @@ type testClient struct {
 	videoMime            atomic.Value
 }
 
-func newTestClient(t *testing.T) *testClient {
+func newTestClient(t *testing.T, conf webrtc.Configuration) *testClient {
 	t.Helper()
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
@@ -57,7 +57,7 @@ func newTestClient(t *testing.T) *testClient {
 	se.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(reg), webrtc.WithSettingEngine(se))
-	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	pc, err := api.NewPeerConnection(conf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,75 +206,10 @@ func TestWebRTCIntegration(t *testing.T) {
 		{"id": 2, "name": "Studio Display", "width": 5120, "height": 2880, "scale": 2, "primary": false},
 	}})
 
-	c := newTestClient(t)
-	sid, cn := randBytes(16), randBytes(32)
-	e.msg(map[string]any{"type": "session-request", "sessionId": b64(sid), "devicePub": b64(pubOf(dev)), "clientNonce": b64(cn)})
-	acc := e.srv.next(t, "session-accept", 2*time.Second)
-	hn := unb64(t, acc["hostNonce"])
-
-	offer, err := c.pc.CreateOffer(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gathered := webrtc.GatheringCompletePromise(c.pc)
-	if err := c.pc.SetLocalDescription(offer); err != nil {
-		t.Fatal(err)
-	}
-	<-gathered
-	offerSDP := c.pc.LocalDescription().SDP
-	if _, err := proto.SDPFingerprint(offerSDP); err != nil {
-		t.Fatal(err)
-	}
-	sig := proto.Sign(dev, proto.LabelOffer, sid, hostPub, pubOf(dev), cn, hn, proto.Hash([]byte(offerSDP)))
-
-	// Route host → server messages: answer + trickled ICE to the client,
-	// everything else to `rest`.
-	rest := make(chan map[string]any, 256)
-	answered := make(chan string, 1)
-	var routerWG sync.WaitGroup
-	stopRouter := make(chan struct{})
-	routerWG.Add(1)
-	go func() {
-		defer routerWG.Done()
-		for {
-			select {
-			case <-stopRouter:
-				return
-			case m := <-e.srv.ch:
-				switch m["type"] {
-				case "answer":
-					answered <- m["_raw"].(string)
-				case "ice":
-					cand, ok := m["candidate"].(map[string]any)
-					if !ok {
-						continue
-					}
-					b, _ := json.Marshal(cand)
-					var ci webrtc.ICECandidateInit
-					_ = json.Unmarshal(b, &ci)
-					// The answer is always routed before the host's candidates.
-					_ = c.pc.AddICECandidate(ci)
-				default:
-					rest <- m
-				}
-			}
-		}
-	}()
-	defer func() { close(stopRouter); routerWG.Wait() }()
-
-	e.msg(map[string]any{"type": "offer", "sessionId": b64(sid), "sdp": offerSDP, "sig": b64(sig)})
-	var ans struct {
-		SessionID string `json:"sessionId"`
-		SDP       string `json:"sdp"`
-		Sig       string `json:"sig"`
-	}
-	select {
-	case raw := <-answered:
-		_ = json.Unmarshal([]byte(raw), &ans)
-	case <-time.After(10 * time.Second):
-		t.Fatal("no answer")
-	}
-	answerSig, _ := proto.UnB64(ans.Sig)
+	c := newTestClient(t, webrtc.Configuration{})
+	n := negotiate(t, e, c, dev, false)
+	sid, cn, hn, offerSDP := n.sid, n.cn, n.hn, n.offerSDP
+	ans, answerSig, rest := n.ans, n.answerSig, n.rest
 	verifyAnswer := func(sdp string) bool {
 		if _, err := proto.SDPFingerprint(sdp); err != nil {
 			return false
@@ -303,9 +238,7 @@ func TestWebRTCIntegration(t *testing.T) {
 		proto.Hash([]byte(offerSDP)), proto.Hash([]byte(ans.SDP))) {
 		t.Fatal("verified with a foreign host key")
 	}
-	if err := c.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: ans.SDP}); err != nil {
-		t.Fatal(err)
-	}
+	n.setRemote()
 
 	// Connected: ENCODER start, AUDIO_CTL start, STATE.session, events.
 	waitFor(t, "ENCODER start", 15*time.Second, func() bool { return len(e.host.encoderCmds("start")) > 0 })
