@@ -1,0 +1,131 @@
+163-test config::tests::rejects_bad_origins ... ok
+164-test device_key::tests::concurrent_first_use_creates_exactly_one_key ... ok
+165-test device_key::tests::corrupt_key_is_reported_not_replaced ... ok
+166-test device_key::tests::creates_key_once_and_persists_it ... ok
+167:test device_key::tests::errors_never_contain_the_seed ... ok
+168-test client::tests::origin_not_switched_if_token_cannot_be_cleared ... ok
+169-test device_key::tests::refuses_non_transcripts ... ok
+170-test device_key::tests::matches_cross_language_vectors ... ok
+171:test device_key::tests::store_read_failure_never_creates_a_new_key ... ok
+172-test device_key::tests::unpersisted_key_is_not_used ... ok
+173-test nav::tests::app_urls ... ok
+174-test nav::tests::blob_urls ... ok
+175-test token::tests::corrupt_stored_token_is_dropped ... ok
+176-test token::tests::rejects_malformed_tokens ... ok
+177-test token::tests::set_get_clear ... ok
+178:test token::tests::store_errors_propagate ... ok
+179-test device_key::tests::signature_verifies_with_public_key ... ok
+180-test config::tests::config_round_trip_and_corruption ... ok
+181-test client::tests::origin_change_clears_token ... ok
+182-
+183:test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+184-
+185-   Doc-tests hr_client_core
+186-
+187-running 0 tests
+188-
+189:test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+190-
+191-
+192-added 2 packages in 2s
+193-        Info Looking up installed tauri packages to check mismatched versions...
+194-     Running beforeBuildCommand `npm --prefix ../web ci --ignore-scripts --no-audit && npm --prefix ../web run build`
+195-
+196-added 5 packages in 1s
+197-
+198-> heartfulness-remote-web@1.0.0 build
+199-> node build.mjs
+200-
+201-
+202-  dist\app.DW5G3PSK.js   147.7kb
+203-  dist\app.MT4FFVTG.css   21.0kb
+204-
+205-Done in 31ms
+--
+290-  Downloaded siphasher v1.0.4
+291-  Downloaded softbuffer v0.4.8
+292-  Downloaded tauri-runtime v2.12.2
+293-  Downloaded tauri-winres v0.3.6
+294:  Downloaded thiserror v2.0.21
+295-  Downloaded tinyvec v1.13.3
+296-  Downloaded toml_datetime v1.1.2+spec-1.1.0
+297-  Downloaded tracing-core v0.1.36
+298-  Downloaded tray-icon v0.25.1
+299-  Downloaded typeid v1.0.3
+300-  Downloaded web_atoms v0.2.6
+301-  Downloaded webview2-com-macros v0.8.1
+302-  Downloaded bs58 v0.5.1
+303-  Downloaded cookie v0.18.2
+304-  Downloaded defmt-macros v1.2.0
+305-  Downloaded dtoa v1.0.11
+306-  Downloaded equivalent v1.0.3
+307-  Downloaded erased-serde v0.4.10
+308-  Downloaded fnv v1.0.7
+309-  Downloaded glob v0.3.4
+310-  Downloaded new_debug_unreachable v1.0.6
+--
+361-  Downloaded indexmap v1.9.3
+362-  Downloaded jiff-tzdb v0.1.9
+363-  Downloaded miniz_oxide v0.8.9
+364-  Downloaded parking_lot_core v0.9.12
+365:  Downloaded thiserror-impl v2.0.21
+366-  Downloaded crossbeam-channel v0.5.17
+367-  Downloaded ico v0.5.0
+368-  Downloaded jiff-core v0.1.1
+369-  Downloaded keyring v3.6.3
+370-  Downloaded miniz_oxide v0.9.1
+371-  Downloaded winreg v0.56.0
+372-  Downloaded cfb v0.14.0
+373-  Downloaded darling_core v0.24.1
+374-  Downloaded derive_more v2.1.1
+375-  Downloaded hashbrown v0.12.3
+376-  Downloaded html5ever v0.39.0
+377-  Downloaded http v1.5.0
+378-  Downloaded indexmap v2.14.2
+379-  Downloaded keyboard-types v0.8.3
+380-  Downloaded png v0.18.1
+381-  Downloaded tauri-plugin-opener v2.7.2
+--
+419-   Compiling zmij v1.0.23
+420-   Compiling syn v3.0.9
+421-   Compiling syn v2.0.119
+422-   Compiling windows-link v0.2.1
+423:   Compiling thiserror v2.0.21
+424-   Compiling smallvec v1.16.3
+425-   Compiling version_check v0.9.5
+426-   Compiling parking_lot_core v0.9.12
+427-   Compiling serde v1.0.229
+428-   Compiling typeid v1.0.3
+429-   Compiling memchr v2.8.3
+430-   Compiling semver v1.0.28
+431-   Compiling synstructure v0.14.0
+432-   Compiling time-core v0.1.9
+433-   Compiling num-conv v0.2.2
+434-   Compiling phf_codegen v0.13.1
+435-   Compiling writeable v0.6.4
+436-   Compiling itoa v1.0.18
+437-   Compiling ident_case v1.0.1
+438-   Compiling litemap v0.8.3
+439-   Compiling erased-serde v0.4.10
+--
+447-   Compiling displaydoc v0.2.7
+448-   Compiling serde_derive v1.0.229
+449-   Compiling zerofrom v0.1.8
+450-   Compiling yoke v0.8.3
+451:   Compiling thiserror-impl v2.0.21
+452-   Compiling zerovec v0.11.8
+453-   Compiling tinystr v0.8.4
+454-   Compiling icu_locale_core v2.3.0
+455-   Compiling potential_utf v0.1.6
+456-   Compiling zerotrie v0.2.5
+457-   Compiling utf8_iter v1.0.4
+458-   Compiling icu_collections v2.3.0
+459-   Compiling icu_provider v2.3.1
+460-   Compiling darling_macro v0.24.1
+461-   Compiling anyhow v1.0.104
+462-   Compiling new_debug_unreachable v1.0.6
+463-   Compiling scopeguard v1.2.0
+464-   Compiling lock_api v0.4.14
+465-   Compiling darling v0.24.1
+466-   Compiling phf v0.13.1
+467-   Compiling generic-array v0.14.7
