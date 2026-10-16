@@ -149,6 +149,7 @@ without credentials.
 | `POST /api/logout` | session | revoke session |
 | `GET /api/me` | session | `{host:{pub,name,online,state,sessionDeviceName}, devices:[{pub,name,kind,status,createdAt,lastSeen}], passkeys:[{id,name,createdAt}]}` |
 | `POST /api/turn` | session | `{iceServers:[…], ttl}` (coturn REST credentials, 24 h) |
+| `GET /api/nonce` | session | `{nonce}` single-use, 60 s, for "device proof" |
 | `POST /api/passkeys/begin` | session + device proof | add another passkey |
 | `POST /api/passkeys/finish` | session + device proof | |
 | `POST /api/passkeys/delete` | session + device proof | `{id}` (never the last one) |

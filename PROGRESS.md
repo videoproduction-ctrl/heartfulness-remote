@@ -17,12 +17,14 @@ _Last updated: 2026-10-16 (session 1, cloud container)_
 - Deploy to VPS (waiting for owner: VPS IP + free deSEC/DuckDNS address)
 - SECURITY.md, USER-GUIDE.md, final report
 
-## WAITING ON OWNER
-1. Create empty private GitHub repo `heartfulness-remote`
-2. Xcode installed on the Mac
-3. VPS (Hetzner CX22 or DigitalOcean Bangalore) with SSH key `~/.ssh/heartfulness_vps`
-4. Free address from desec.io (dedyn.io) or duckdns.org → A record to VPS IP
-5. Apple Developer account? (optional; default = sign for own Mac only)
+## WAITING ON OWNER (simplified — no Terminal, no Xcode, no SSH keys)
+1. Create empty **public** GitHub repo `videoproduction-ctrl/heartfulness-remote`
+   (no secrets in it; public lets the server and Mac install with no keys) and
+   give the Claude GitHub app access to it
+2. Free address from desec.io (dedyn.io) or duckdns.org
+3. VPS (Hetzner CX22 / DigitalOcean) created with `deploy/cloud-init.yaml`
+   pasted into "User data" (edit one line: the address); then A record → VPS IP
+4. Later: download Mac app from GitHub Releases, open, follow the wizard
 
 ## HOW TO RUN (dev)
 - Protocol tests: `cd proto && go test ./...`

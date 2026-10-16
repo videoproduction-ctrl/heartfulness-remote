@@ -96,3 +96,11 @@ Online / Offline / Someone connected.
   Any change to signatures/messages must update PROTOCOL.md and the
   cross-language test vectors in `testdata/vectors.json`.
 - Never commit secrets. `.env`, `*.key`, `*.pem`, `secrets/` are git-ignored.
+- **Owner preference (2026-10-16): "I just need the software to see at the end —
+  make it possible."** The owner is non-technical. Prefer zero-Terminal paths:
+  CI-built app downloaded from GitHub Releases (no Xcode needed), server via a
+  pasted cloud-init file (no SSH keys needed), free deSEC/DuckDNS address (no
+  paid domain — owner declined to pay for one). Keep owner steps minimal and
+  batch them into one checklist.
+- This cloud container cannot SSH or reach most hosts; CI feedback comes back
+  through `ci-results/<job>` branches (git fetch), not the GitHub API.
