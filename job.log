@@ -1,0 +1,400 @@
+[53/56] Write Objects.LinkFileList
+[54/56] Linking HeartfulnessRemote
+[55/56] Applying HeartfulnessRemote
+Build complete! (28.43s)
+Test Suite 'All tests' started at 2026-10-16 12:21:24.988.
+Test Suite 'HeartfulnessRemotePackageTests.xctest' started at 2026-10-16 12:21:24.990.
+Test Suite 'AnnexBTests' started at 2026-10-16 12:21:24.990.
+Test Case '-[HRCoreTests.AnnexBTests testConvertsFourByteLengthPrefixes]' started.
+Test Case '-[HRCoreTests.AnnexBTests testConvertsFourByteLengthPrefixes]' passed (0.003 seconds).
+Test Case '-[HRCoreTests.AnnexBTests testHEVCTypes]' started.
+Test Case '-[HRCoreTests.AnnexBTests testHEVCTypes]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.AnnexBTests testKeyframeAccessUnitStartsWithParameterSets]' started.
+Test Case '-[HRCoreTests.AnnexBTests testKeyframeAccessUnitStartsWithParameterSets]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.AnnexBTests testOtherLengthSizesAndEmptyNALs]' started.
+Test Case '-[HRCoreTests.AnnexBTests testOtherLengthSizesAndEmptyNALs]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.AnnexBTests testRejectsTruncatedInput]' started.
+Test Case '-[HRCoreTests.AnnexBTests testRejectsTruncatedInput]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.AnnexBTests testSplitHandlesThreeByteStartCodes]' started.
+Test Case '-[HRCoreTests.AnnexBTests testSplitHandlesThreeByteStartCodes]' passed (0.000 seconds).
+Test Suite 'AnnexBTests' passed at 2026-10-16 12:21:24.995.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+Test Suite 'EncodingTests' started at 2026-10-16 12:21:24.995.
+Test Case '-[HRCoreTests.EncodingTests testBase32]' started.
+Test Case '-[HRCoreTests.EncodingTests testBase32]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.EncodingTests testBase64URL]' started.
+Test Case '-[HRCoreTests.EncodingTests testBase64URL]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.EncodingTests testFingerprintFormatFromKnownDigest]' started.
+Test Case '-[HRCoreTests.EncodingTests testFingerprintFormatFromKnownDigest]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.EncodingTests testHostKeyFromSeedAndSignaturesWithCryptoKit]' started.
+Test Case '-[HRCoreTests.EncodingTests testHostKeyFromSeedAndSignaturesWithCryptoKit]' passed (0.005 seconds).
+Test Case '-[HRCoreTests.EncodingTests testSASFormatting]' started.
+Test Case '-[HRCoreTests.EncodingTests testSASFormatting]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.EncodingTests testSASFromDigest]' started.
+Test Case '-[HRCoreTests.EncodingTests testSASFromDigest]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.EncodingTests testSASVectorWithCryptoKit]' started.
+Test Case '-[HRCoreTests.EncodingTests testSASVectorWithCryptoKit]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.EncodingTests testSigningPolicyMatchesProtocolSigners]' started.
+Test Case '-[HRCoreTests.EncodingTests testSigningPolicyMatchesProtocolSigners]' passed (0.002 seconds).
+Test Case '-[HRCoreTests.EncodingTests testTBSMatchesGoVectors]' started.
+Test Case '-[HRCoreTests.EncodingTests testTBSMatchesGoVectors]' passed (0.001 seconds).
+Test Suite 'EncodingTests' passed at 2026-10-16 12:21:25.005.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.010 (0.010) seconds
+Test Suite 'FirewallTests' started at 2026-10-16 12:21:25.005.
+Test Case '-[HRCoreTests.FirewallTests testAppleScriptLiteralEscaping]' started.
+Test Case '-[HRCoreTests.FirewallTests testAppleScriptLiteralEscaping]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FirewallTests testEnableFirewallScript]' started.
+Test Case '-[HRCoreTests.FirewallTests testEnableFirewallScript]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FirewallTests testGlobalStateParsing]' started.
+Test Case '-[HRCoreTests.FirewallTests testGlobalStateParsing]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FirewallTests testStealthParsing]' started.
+Test Case '-[HRCoreTests.FirewallTests testStealthParsing]' passed (0.000 seconds).
+Test Suite 'FirewallTests' passed at 2026-10-16 12:21:25.006.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'FramingTests' started at 2026-10-16 12:21:25.006.
+Test Case '-[HRCoreTests.FramingTests testAudioPayloadLayout]' started.
+Test Case '-[HRCoreTests.FramingTests testAudioPayloadLayout]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testEmptyPayloadRoundTrip]' started.
+Test Case '-[HRCoreTests.FramingTests testEmptyPayloadRoundTrip]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testEncodeLayout]' started.
+Test Case '-[HRCoreTests.FramingTests testEncodeLayout]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testEncodeRejectsOversizePayload]' started.
+Test Case '-[HRCoreTests.FramingTests testEncodeRejectsOversizePayload]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testLargeFrameAcrossManyChunks]' started.
+Test Case '-[HRCoreTests.FramingTests testLargeFrameAcrossManyChunks]' passed (0.005 seconds).
+Test Case '-[HRCoreTests.FramingTests testMaximumLengthAccepted]' started.
+Test Case '-[HRCoreTests.FramingTests testMaximumLengthAccepted]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testOversizeLengthRejected]' started.
+Test Case '-[HRCoreTests.FramingTests testOversizeLengthRejected]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testRoundTripSeveralFramesInOneChunk]' started.
+Test Case '-[HRCoreTests.FramingTests testRoundTripSeveralFramesInOneChunk]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testSplitInsideHeaderAndPayload]' started.
+Test Case '-[HRCoreTests.FramingTests testSplitInsideHeaderAndPayload]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testSplitReadsByteByByte]' started.
+Test Case '-[HRCoreTests.FramingTests testSplitReadsByteByByte]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.FramingTests testTypeValuesMatchProtocol]' started.
+Test Case '-[HRCoreTests.FramingTests testTypeValuesMatchProtocol]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testVideoPayloadLayout]' started.
+Test Case '-[HRCoreTests.FramingTests testVideoPayloadLayout]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.FramingTests testZeroLengthRejected]' started.
+Test Case '-[HRCoreTests.FramingTests testZeroLengthRejected]' passed (0.000 seconds).
+Test Suite 'FramingTests' passed at 2026-10-16 12:21:25.015.
+	 Executed 13 tests, with 0 failures (0 unexpected) in 0.008 (0.009) seconds
+Test Suite 'GeometryTests' started at 2026-10-16 12:21:25.015.
+Test Case '-[HRCoreTests.GeometryTests testAppPlacement]' started.
+Test Case '-[HRCoreTests.GeometryTests testAppPlacement]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testCaptureSizing]' started.
+Test Case '-[HRCoreTests.GeometryTests testCaptureSizing]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testClampsOutOfRangeAndInvalidInput]' started.
+Test Case '-[HRCoreTests.GeometryTests testClampsOutOfRangeAndInvalidInput]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testClickCounter]' started.
+Test Case '-[HRCoreTests.GeometryTests testClickCounter]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testMapsCornersAndCentreOnMainDisplay]' started.
+Test Case '-[HRCoreTests.GeometryTests testMapsCornersAndCentreOnMainDisplay]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testMapsOntoSecondaryDisplayWithNegativeOrigin]' started.
+Test Case '-[HRCoreTests.GeometryTests testMapsOntoSecondaryDisplayWithNegativeOrigin]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testNormalizedRoundTrip]' started.
+Test Case '-[HRCoreTests.GeometryTests testNormalizedRoundTrip]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GeometryTests testRestartBackoff]' started.
+Test Case '-[HRCoreTests.GeometryTests testRestartBackoff]' passed (0.000 seconds).
+Test Suite 'GeometryTests' passed at 2026-10-16 12:21:25.016.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'GoPayloadTests' started at 2026-10-16 12:21:25.016.
+Test Case '-[HRCoreTests.GoPayloadTests testAccessLogAsWrittenByGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testAccessLogAsWrittenByGo]' passed (0.017 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testEncoderCommandsAsMarshalledByGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testEncoderCommandsAsMarshalledByGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testEventAsMarshalledByGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testEventAsMarshalledByGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testInputAsMarshalledByGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testInputAsMarshalledByGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testLocalhostRuleMatchesAgent]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testLocalhostRuleMatchesAgent]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testResetTrustStoreCommand]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testResetTrustStoreCommand]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testSignRequestFromGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testSignRequestFromGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testStateAsMarshalledByGo]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testStateAsMarshalledByGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.GoPayloadTests testStateWithoutSession]' started.
+Test Case '-[HRCoreTests.GoPayloadTests testStateWithoutSession]' passed (0.000 seconds).
+Test Suite 'GoPayloadTests' passed at 2026-10-16 12:21:25.036.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.020 (0.020) seconds
+Test Suite 'KeyCodeTests' started at 2026-10-16 12:21:25.036.
+Test Case '-[HRCoreTests.KeyCodeTests testAllKeyCodesAreValidMacKeyCodes]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testAllKeyCodesAreValidMacKeyCodes]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testAllLettersDigitsAndFunctionKeysPresent]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testAllLettersDigitsAndFunctionKeysPresent]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testCommonCodesPresent]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testCommonCodesPresent]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testIntrinsicFlags]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testIntrinsicFlags]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testKnownValues]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testKnownValues]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testMediaKeys]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testMediaKeys]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testModifierFlags]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testModifierFlags]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testNoDuplicateKeyCodesForDistinctKeys]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testNoDuplicateKeyCodesForDistinctKeys]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.KeyCodeTests testTextChunker]' started.
+Test Case '-[HRCoreTests.KeyCodeTests testTextChunker]' passed (0.003 seconds).
+Test Suite 'KeyCodeTests' passed at 2026-10-16 12:21:25.040.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
+Test Suite 'ModelTests' started at 2026-10-16 12:21:25.040.
+Test Case '-[HRCoreTests.ModelTests testAudioControlAndClipboard]' started.
+Test Case '-[HRCoreTests.ModelTests testAudioControlAndClipboard]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testCommandEncodings]' started.
+Test Case '-[HRCoreTests.ModelTests testCommandEncodings]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.ModelTests testConfigFieldNames]' started.
+Test Case '-[HRCoreTests.ModelTests testConfigFieldNames]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testDeviceDisplayNameFallback]' started.
+Test Case '-[HRCoreTests.ModelTests testDeviceDisplayNameFallback]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEncoderOtherCommands]' started.
+Test Case '-[HRCoreTests.ModelTests testEncoderOtherCommands]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEncoderStart]' started.
+Test Case '-[HRCoreTests.ModelTests testEncoderStart]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEncoderStartDefaultsAndClamping]' started.
+Test Case '-[HRCoreTests.ModelTests testEncoderStartDefaultsAndClamping]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEventNames]' started.
+Test Case '-[HRCoreTests.ModelTests testEventNames]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEventWithDeviceObject]' started.
+Test Case '-[HRCoreTests.ModelTests testEventWithDeviceObject]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testEventWithDeviceStringAndDetail]' started.
+Test Case '-[HRCoreTests.ModelTests testEventWithDeviceStringAndDetail]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testFullStateDecodes]' started.
+Test Case '-[HRCoreTests.ModelTests testFullStateDecodes]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testInputMessages]' started.
+Test Case '-[HRCoreTests.ModelTests testInputMessages]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testJSONValueRoundTrip]' started.
+Test Case '-[HRCoreTests.ModelTests testJSONValueRoundTrip]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testLogResult]' started.
+Test Case '-[HRCoreTests.ModelTests testLogResult]' passed (0.002 seconds).
+Test Case '-[HRCoreTests.ModelTests testOfflineStateWithNullSessionAndErrors]' started.
+Test Case '-[HRCoreTests.ModelTests testOfflineStateWithNullSessionAndErrors]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testSignRequestIdIsEchoedVerbatim]' started.
+Test Case '-[HRCoreTests.ModelTests testSignRequestIdIsEchoedVerbatim]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testStateToleratesMissingFieldsAndUnknownValues]' started.
+Test Case '-[HRCoreTests.ModelTests testStateToleratesMissingFieldsAndUnknownValues]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.ModelTests testTimestampsInMillisecondsAndRFC3339]' started.
+Test Case '-[HRCoreTests.ModelTests testTimestampsInMillisecondsAndRFC3339]' passed (0.001 seconds).
+Test Suite 'ModelTests' passed at 2026-10-16 12:21:25.047.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.006 (0.007) seconds
+Test Suite 'MultiMacTests' started at 2026-10-16 12:21:25.047.
+Test Case '-[HRCoreTests.MultiMacTests testAccountNotificationsAndLog]' started.
+Test Case '-[HRCoreTests.MultiMacTests testAccountNotificationsAndLog]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testJoinedAndUnclaimedStates]' started.
+Test Case '-[HRCoreTests.MultiMacTests testJoinedAndUnclaimedStates]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testJoinVectorsLoad]' started.
+Test Case '-[HRCoreTests.MultiMacTests testJoinVectorsLoad]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testMacIDFormatting]' started.
+Test Case '-[HRCoreTests.MultiMacTests testMacIDFormatting]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testMacIDFromDigest]' started.
+Test Case '-[HRCoreTests.MultiMacTests testMacIDFromDigest]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testMacIDVectorWithCryptoKit]' started.
+Test Case '-[HRCoreTests.MultiMacTests testMacIDVectorWithCryptoKit]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testOlderAgentWithoutJoinedField]' started.
+Test Case '-[HRCoreTests.MultiMacTests testOlderAgentWithoutJoinedField]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testPendingJoinStateAsMarshalledByGo]' started.
+Test Case '-[HRCoreTests.MultiMacTests testPendingJoinStateAsMarshalledByGo]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testStateEncodesGoFieldNames]' started.
+Test Case '-[HRCoreTests.MultiMacTests testStateEncodesGoFieldNames]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.MultiMacTests testStatusWhenNotInAccount]' started.
+Test Case '-[HRCoreTests.MultiMacTests testStatusWhenNotInAccount]' passed (0.000 seconds).
+Test Suite 'MultiMacTests' passed at 2026-10-16 12:21:25.049.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'PresentationTests' started at 2026-10-16 12:21:25.049.
+Test Case '-[HRCoreTests.PresentationTests testAccessLogTitles]' started.
+Test Case '-[HRCoreTests.PresentationTests testAccessLogTitles]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.PresentationTests testDeviceKinds]' started.
+Test Case '-[HRCoreTests.PresentationTests testDeviceKinds]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.PresentationTests testEventNotifications]' started.
+Test Case '-[HRCoreTests.PresentationTests testEventNotifications]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.PresentationTests testServerErrorTexts]' started.
+Test Case '-[HRCoreTests.PresentationTests testServerErrorTexts]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.PresentationTests testSessionTexts]' started.
+Test Case '-[HRCoreTests.PresentationTests testSessionTexts]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.PresentationTests testSettingsTexts]' started.
+Test Case '-[HRCoreTests.PresentationTests testSettingsTexts]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.PresentationTests testStatusPrecedence]' started.
+Test Case '-[HRCoreTests.PresentationTests testStatusPrecedence]' passed (0.000 seconds).
+Test Suite 'PresentationTests' passed at 2026-10-16 12:21:25.053.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+Test Suite 'SettingsTests' started at 2026-10-16 12:21:25.053.
+Test Case '-[HRCoreTests.SettingsTests testClamping]' started.
+Test Case '-[HRCoreTests.SettingsTests testClamping]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.SettingsTests testDefaults]' started.
+Test Case '-[HRCoreTests.SettingsTests testDefaults]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.SettingsTests testPersistenceRoundTripAndLenientDecoding]' started.
+Test Case '-[HRCoreTests.SettingsTests testPersistenceRoundTripAndLenientDecoding]' passed (0.001 seconds).
+Test Case '-[HRCoreTests.SettingsTests testServerAddressAcceptsBareNames]' started.
+Test Case '-[HRCoreTests.SettingsTests testServerAddressAcceptsBareNames]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.SettingsTests testServerAddressDevelopmentLocalhost]' started.
+Test Case '-[HRCoreTests.SettingsTests testServerAddressDevelopmentLocalhost]' passed (0.000 seconds).
+Test Case '-[HRCoreTests.SettingsTests testServerAddressRejections]' started.
+Test Case '-[HRCoreTests.SettingsTests testServerAddressRejections]' passed (0.000 seconds).
+Test Suite 'SettingsTests' passed at 2026-10-16 12:21:25.055.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'HeartfulnessRemotePackageTests.xctest' passed at 2026-10-16 12:21:25.055.
+	 Executed 99 tests, with 0 failures (0 unexpected) in 0.061 (0.066) seconds
+Test Suite 'All tests' passed at 2026-10-16 12:21:25.056.
+	 Executed 99 tests, with 0 failures (0 unexpected) in 0.061 (0.067) seconds
+◇ Test run started.
+↳ Testing Library Version: 124.4
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests passed after 0.001 seconds.
+==> Heartfulness Remote 0.2.0 (build 2), signing: ad-hoc
+    ProductName:		macOS
+    ProductVersion:		15.7.9
+    BuildVersion:		24G830
+==> hr-agent (Go, darwin arm64 + amd64)
+go version go1.27.2 darwin/arm64
+Architectures in the fat file: /var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/hr-agent are: x86_64 arm64 
+==> HeartfulnessRemote (Swift, release, arm64 + x86_64)
+swift-driver version: 1.120.5 Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)
+0%: Compute target dependency graph
+Building targets in dependency order
+Target dependency graph (4 targets)
+0%: Gather provisioning inputs
+0%: Create build description
+0%: Discovering version info for swiftc
+0%: Discovering version info for clang
+0%: Discovering version info for ld
+Build description signature: 4c8e3b0bfacb77d620a086a026d9bdc5
+
+Build description path: /Users/runner/work/heartfulness-remote/heartfulness-remote/mac/.build/apple/Intermediates.noindex/XCBuildData/4c8e3b0bfacb77d620a086a026d9bdc5.xcbuilddata
+
+0%: Build stat cache for /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk
+0%: Create build directory $(TARGET_BUILD_DIR)
+0%: Create build directory $(OBJROOT)
+0%: Create build directory $(TARGET_BUILD_DIR)/Release
+0%: Create build directory $(OBJROOT)/EagerLinkingTBDs/Release
+0%: Create build directory $(TARGET_BUILD_DIR)/Release/PackageFrameworks
+0%: Write HeartfulnessRemote_const_extract_protocols.json (x86_64)
+0%: Write HeartfulnessRemote.SwiftFileList (x86_64)
+0%: Write HeartfulnessRemote.LinkFileList (x86_64)
+0%: Write HeartfulnessRemote-OutputFileMap.json (x86_64)
+0%: Write HeartfulnessRemote_const_extract_protocols.json (arm64)
+0%: Write HeartfulnessRemote.SwiftFileList (arm64)
+0%: Write HeartfulnessRemote.LinkFileList (arm64)
+0%: Write HeartfulnessRemote-OutputFileMap.json (arm64)
+20%: Write HeartfulnessRemote.DependencyStaticMetadataFileList
+20%: Write HeartfulnessRemote.DependencyMetadataFileList
+20%: Write HRCore_Module_const_extract_protocols.json (x86_64)
+20%: Write HRCore_Module.SwiftFileList (x86_64)
+20%: Write HRCore_Module.SwiftConstValuesFileList
+20%: Write HRCore_Module.LinkFileList (x86_64)
+20%: Write HRCore_Module-OutputFileMap.json (x86_64)
+20%: Write HRCore_Module_const_extract_protocols.json (arm64)
+20%: Write HRCore_Module.SwiftFileList (arm64)
+20%: Write HRCore_Module.SwiftConstValuesFileList
+20%: Write HRCore_Module.LinkFileList (arm64)
+20%: Write HRCore_Module-OutputFileMap.json (arm64)
+20%: Write HRCore_Module.DependencyStaticMetadataFileList
+20%: Write HRCore_Module.DependencyMetadataFileList
+20%: Write HRCore.modulemap
+20%: Copy HRCore.modulemap
+46%: Planning Swift module HRCore (x86_64)
+46%: Planning Swift module HRCore (arm64)
+47%: Compiling AnnexB.swift, AppPlacement.swift, Encoding.swift, Firewall.swift, Framing.swift, Geometry.swift, JSONSupport.swift, KeyCodes.swift, Models.swift, Presentation.swift, Settings.swift
+47%: Compile HRCore_Module (x86_64)
+47%: Compile HRCore_Module (arm64)
+47%: Compiling AnnexB.swift, AppPlacement.swift, Encoding.swift, Firewall.swift, Framing.swift, Geometry.swift, JSONSupport.swift, KeyCodes.swift, Models.swift, Presentation.swift, Settings.swift
+47%: Compile 11 Swift source files (arm64)
+47%: Compile 11 Swift source files (x86_64)
+51%: Discovering Swift tasks after 'Compiling AnnexB.swift, AppPlacement.swift, Encoding.swift, Firewall.swift, Framing.swift, Geometry.swift, JSONSupport.swift, KeyCodes.swift, Models.swift, Presentation.swift, Settings.swift'
+51%: Unblock downstream dependents of HRCore_Module (arm64)
+51%: Copy HRCore.swiftmodule (arm64)
+51%: Copy HRCore.swiftdoc (arm64)
+51%: Copy HRCore.abi.json (arm64)
+51%: Copy HRCore.swiftsourceinfo (arm64)
+59%: Discovering Swift tasks after 'Compiling AnnexB.swift, AppPlacement.swift, Encoding.swift, Firewall.swift, Framing.swift, Geometry.swift, JSONSupport.swift, KeyCodes.swift, Models.swift, Presentation.swift, Settings.swift'
+59%: Unblock downstream dependents of HRCore_Module (x86_64)
+59%: Merge Objective-C generated interface headers
+59%: Copy HRCore.swiftmodule (x86_64)
+59%: Copy HRCore.swiftdoc (x86_64)
+59%: Copy HRCore.abi.json (x86_64)
+59%: Copy HRCore.swiftsourceinfo (x86_64)
+59%: Link HRCore_Module.o (x86_64)
+59%: Link HRCore_Module.o (arm64)
+59%: Planning Swift module HeartfulnessRemote (x86_64)
+59%: Planning Swift module HeartfulnessRemote (arm64)
+59%: Compiling AgentProcess.swift, AppModel.swift, AppMover.swift, AudioEncoder.swift, CaptureEngine.swift, ClipboardSync.swift, GlobalHotKey.swift, HeartfulnessRemoteApp.swift, HostKeyStore.swift, InputInjector.swift, Log.swift, Notifier.swift, SessionBanner.swift, SystemIntegration.swift, VideoEncoder.swift, Components.swift, DashboardView.swift, MenuBarPanel.swift, SetupWizardView.swift, WindowManager.swift
+59%: Compiling AgentProcess.swift, AppModel.swift, AppMover.swift, AudioEncoder.swift, CaptureEngine.swift, ClipboardSync.swift, GlobalHotKey.swift, HeartfulnessRemoteApp.swift, HostKeyStore.swift, InputInjector.swift, Log.swift, Notifier.swift, SessionBanner.swift, SystemIntegration.swift, VideoEncoder.swift, Components.swift, DashboardView.swift, MenuBarPanel.swift, SetupWizardView.swift, WindowManager.swift
+71%: Compile HeartfulnessRemote (x86_64)
+71%: Create universal binary HRCore_Module.o
+71%: Compile HeartfulnessRemote (arm64)
+71%: Extract app intents metadata
+71%: Compile 20 Swift source files (x86_64)
+71%: Compile 20 Swift source files (arm64)
+2026-10-16 12:22:00.680 appintentsmetadataprocessor[4807:18812] Starting appintentsmetadataprocessor export
+2026-10-16 12:22:00.767 appintentsmetadataprocessor[4807:18812] Extracted no relevant App Intents symbols, skipping writing output
+
+77%: Register execution policy exception for HRCore_Module.o
+79%: Discovering Swift tasks after 'Compiling AgentProcess.swift, AppModel.swift, AppMover.swift, AudioEncoder.swift, CaptureEngine.swift, ClipboardSync.swift, GlobalHotKey.swift, HeartfulnessRemoteApp.swift, HostKeyStore.swift, InputInjector.swift, Log.swift, Notifier.swift, SessionBanner.swift, SystemIntegration.swift, VideoEncoder.swift, Components.swift, DashboardView.swift, MenuBarPanel.swift, SetupWizardView.swift, WindowManager.swift'
+79%: Unblock downstream dependents of HeartfulnessRemote (arm64)
+79%: Link HeartfulnessRemote (arm64)
+79%: Copy HeartfulnessRemote.swiftmodule (arm64)
+79%: Copy HeartfulnessRemote.swiftdoc (arm64)
+79%: Copy HeartfulnessRemote.abi.json (arm64)
+79%: Copy HeartfulnessRemote.swiftsourceinfo (arm64)
+87%: Discovering Swift tasks after 'Compiling AgentProcess.swift, AppModel.swift, AppMover.swift, AudioEncoder.swift, CaptureEngine.swift, ClipboardSync.swift, GlobalHotKey.swift, HeartfulnessRemoteApp.swift, HostKeyStore.swift, InputInjector.swift, Log.swift, Notifier.swift, SessionBanner.swift, SystemIntegration.swift, VideoEncoder.swift, Components.swift, DashboardView.swift, MenuBarPanel.swift, SetupWizardView.swift, WindowManager.swift'
+87%: Unblock downstream dependents of HeartfulnessRemote (x86_64)
+87%: Copy HeartfulnessRemote.swiftmodule (x86_64)
+87%: Link HeartfulnessRemote (x86_64)
+87%: Copy HeartfulnessRemote.swiftdoc (x86_64)
+87%: Copy HeartfulnessRemote.abi.json (x86_64)
+87%: Copy HeartfulnessRemote.swiftsourceinfo (x86_64)
+95%: Create universal binary HeartfulnessRemote
+95%: Generate HeartfulnessRemote.dSYM for HeartfulnessRemote
+98%: Register execution policy exception for HeartfulnessRemote
+100%: Build succeeded
+Build complete!
+Architectures in the fat file: /Users/runner/work/heartfulness-remote/heartfulness-remote/mac/.build/apple/Products/Release/HeartfulnessRemote are: x86_64 arm64 
+==> Assembling Heartfulness Remote.app
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/Info.plist: OK
+==> Signing (hardened runtime, ad-hoc)
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/MacOS/hr-agent: replacing existing signature
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app: replacing existing signature
+==> Verifying signatures
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/MacOS/hr-agent: valid on disk
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/MacOS/hr-agent: satisfies its Designated Requirement
+--prepared:/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/MacOS/hr-agent
+--validated:/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/hr-build-mac.fgLJQj/Heartfulness Remote.app/Contents/MacOS/hr-agent
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app: valid on disk
+/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/Heartfulness Remote.app: satisfies its Designated Requirement
+    Identifier=org.heartfulness.remote.host
+    Format=app bundle with Mach-O universal (x86_64 arm64)
+    CodeDirectory v=20500 size=20957 flags=0x10002(adhoc,runtime) hashes=644+7 location=embedded
+    Signature=adhoc
+    TeamIdentifier=not set
+    Runtime Version=15.5.0
+    Identifier=org.heartfulness.remote.host.agent
+    CodeDirectory v=20500 size=89507 flags=0x10002(adhoc,runtime) hashes=2786+7 location=embedded
+==> Packaging
+==> Done
+total 24168
+drwxr-xr-x   4 runner  staff       128 Oct 16 12:22 .
+drwxr-xr-x  26 runner  staff       832 Oct 16 12:22 ..
+drwxr-xr-x   3 runner  staff        96 Oct 16 12:22 Heartfulness Remote.app
+-rw-r--r--   1 runner  staff  11332719 Oct 16 12:22 Heartfulness-Remote-Mac.zip
+a48555665537d0b96a55c8ab4becdaadb8da199c815ad6c176016959c497c8c0  /Users/runner/work/heartfulness-remote/heartfulness-remote/dist/Heartfulness-Remote-Mac.zip
+README-FIRST.txt present
+Heartfulness Remote/
+Heartfulness Remote/README-FIRST.txt
+Heartfulness Remote/Heartfulness Remote.app/
+Heartfulness Remote/Heartfulness Remote.app/Contents/
+Heartfulness Remote/Heartfulness Remote.app/Contents/_CodeSignature/
+Heartfulness Remote/Heartfulness Remote.app/Contents/_CodeSignature/CodeResources
+Heartfulness Remote/Heartfulness Remote.app/Contents/MacOS/
+Heartfulness Remote/Heartfulness Remote.app/Contents/MacOS/hr-agent
+Heartfulness Remote/Heartfulness Remote.app/Contents/MacOS/HeartfulnessRemote
+Heartfulness Remote/Heartfulness Remote.app/Contents/Resources/
+Heartfulness Remote/Heartfulness Remote.app/Contents/Resources/AppIcon.icns
+Heartfulness Remote/Heartfulness Remote.app/Contents/Info.plist
+Heartfulness Remote/Heartfulness Remote.app/Contents/PkgInfo
+total 22136
+drwxr-xr-x   3 runner  staff        96 Oct 16 12:22 .
+drwxr-xr-x  27 runner  staff       864 Oct 16 12:22 ..
+-rw-r--r--   1 runner  staff  11332719 Oct 16 12:22 Heartfulness-Remote-Mac.zip
+a48555665537d0b96a55c8ab4becdaadb8da199c815ad6c176016959c497c8c0  out/Heartfulness-Remote-Mac.zip

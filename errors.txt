@@ -1,0 +1,225 @@
+69-Test Case '-[HRCoreTests.AnnexBTests testRejectsTruncatedInput]' passed (0.001 seconds).
+70-Test Case '-[HRCoreTests.AnnexBTests testSplitHandlesThreeByteStartCodes]' started.
+71-Test Case '-[HRCoreTests.AnnexBTests testSplitHandlesThreeByteStartCodes]' passed (0.000 seconds).
+72-Test Suite 'AnnexBTests' passed at 2026-10-16 12:21:24.995.
+73:	 Executed 6 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+74-Test Suite 'EncodingTests' started at 2026-10-16 12:21:24.995.
+75-Test Case '-[HRCoreTests.EncodingTests testBase32]' started.
+76-Test Case '-[HRCoreTests.EncodingTests testBase32]' passed (0.000 seconds).
+77-Test Case '-[HRCoreTests.EncodingTests testBase64URL]' started.
+78-Test Case '-[HRCoreTests.EncodingTests testBase64URL]' passed (0.000 seconds).
+79-Test Case '-[HRCoreTests.EncodingTests testFingerprintFormatFromKnownDigest]' started.
+80-Test Case '-[HRCoreTests.EncodingTests testFingerprintFormatFromKnownDigest]' passed (0.000 seconds).
+81-Test Case '-[HRCoreTests.EncodingTests testHostKeyFromSeedAndSignaturesWithCryptoKit]' started.
+82-Test Case '-[HRCoreTests.EncodingTests testHostKeyFromSeedAndSignaturesWithCryptoKit]' passed (0.005 seconds).
+83-Test Case '-[HRCoreTests.EncodingTests testSASFormatting]' started.
+84-Test Case '-[HRCoreTests.EncodingTests testSASFormatting]' passed (0.000 seconds).
+85-Test Case '-[HRCoreTests.EncodingTests testSASFromDigest]' started.
+86-Test Case '-[HRCoreTests.EncodingTests testSASFromDigest]' passed (0.000 seconds).
+87-Test Case '-[HRCoreTests.EncodingTests testSASVectorWithCryptoKit]' started.
+88-Test Case '-[HRCoreTests.EncodingTests testSASVectorWithCryptoKit]' passed (0.001 seconds).
+89-Test Case '-[HRCoreTests.EncodingTests testSigningPolicyMatchesProtocolSigners]' started.
+90-Test Case '-[HRCoreTests.EncodingTests testSigningPolicyMatchesProtocolSigners]' passed (0.002 seconds).
+91-Test Case '-[HRCoreTests.EncodingTests testTBSMatchesGoVectors]' started.
+92-Test Case '-[HRCoreTests.EncodingTests testTBSMatchesGoVectors]' passed (0.001 seconds).
+93-Test Suite 'EncodingTests' passed at 2026-10-16 12:21:25.005.
+94:	 Executed 9 tests, with 0 failures (0 unexpected) in 0.010 (0.010) seconds
+95-Test Suite 'FirewallTests' started at 2026-10-16 12:21:25.005.
+96-Test Case '-[HRCoreTests.FirewallTests testAppleScriptLiteralEscaping]' started.
+97-Test Case '-[HRCoreTests.FirewallTests testAppleScriptLiteralEscaping]' passed (0.000 seconds).
+98-Test Case '-[HRCoreTests.FirewallTests testEnableFirewallScript]' started.
+99-Test Case '-[HRCoreTests.FirewallTests testEnableFirewallScript]' passed (0.000 seconds).
+100-Test Case '-[HRCoreTests.FirewallTests testGlobalStateParsing]' started.
+101-Test Case '-[HRCoreTests.FirewallTests testGlobalStateParsing]' passed (0.000 seconds).
+102-Test Case '-[HRCoreTests.FirewallTests testStealthParsing]' started.
+103-Test Case '-[HRCoreTests.FirewallTests testStealthParsing]' passed (0.000 seconds).
+104-Test Suite 'FirewallTests' passed at 2026-10-16 12:21:25.006.
+105:	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+106-Test Suite 'FramingTests' started at 2026-10-16 12:21:25.006.
+107-Test Case '-[HRCoreTests.FramingTests testAudioPayloadLayout]' started.
+108-Test Case '-[HRCoreTests.FramingTests testAudioPayloadLayout]' passed (0.000 seconds).
+109-Test Case '-[HRCoreTests.FramingTests testEmptyPayloadRoundTrip]' started.
+110-Test Case '-[HRCoreTests.FramingTests testEmptyPayloadRoundTrip]' passed (0.000 seconds).
+111-Test Case '-[HRCoreTests.FramingTests testEncodeLayout]' started.
+112-Test Case '-[HRCoreTests.FramingTests testEncodeLayout]' passed (0.000 seconds).
+113-Test Case '-[HRCoreTests.FramingTests testEncodeRejectsOversizePayload]' started.
+114-Test Case '-[HRCoreTests.FramingTests testEncodeRejectsOversizePayload]' passed (0.000 seconds).
+115-Test Case '-[HRCoreTests.FramingTests testLargeFrameAcrossManyChunks]' started.
+116-Test Case '-[HRCoreTests.FramingTests testLargeFrameAcrossManyChunks]' passed (0.005 seconds).
+117-Test Case '-[HRCoreTests.FramingTests testMaximumLengthAccepted]' started.
+118-Test Case '-[HRCoreTests.FramingTests testMaximumLengthAccepted]' passed (0.000 seconds).
+119-Test Case '-[HRCoreTests.FramingTests testOversizeLengthRejected]' started.
+120-Test Case '-[HRCoreTests.FramingTests testOversizeLengthRejected]' passed (0.000 seconds).
+121-Test Case '-[HRCoreTests.FramingTests testRoundTripSeveralFramesInOneChunk]' started.
+--
+130-Test Case '-[HRCoreTests.FramingTests testVideoPayloadLayout]' passed (0.000 seconds).
+131-Test Case '-[HRCoreTests.FramingTests testZeroLengthRejected]' started.
+132-Test Case '-[HRCoreTests.FramingTests testZeroLengthRejected]' passed (0.000 seconds).
+133-Test Suite 'FramingTests' passed at 2026-10-16 12:21:25.015.
+134:	 Executed 13 tests, with 0 failures (0 unexpected) in 0.008 (0.009) seconds
+135-Test Suite 'GeometryTests' started at 2026-10-16 12:21:25.015.
+136-Test Case '-[HRCoreTests.GeometryTests testAppPlacement]' started.
+137-Test Case '-[HRCoreTests.GeometryTests testAppPlacement]' passed (0.000 seconds).
+138-Test Case '-[HRCoreTests.GeometryTests testCaptureSizing]' started.
+139-Test Case '-[HRCoreTests.GeometryTests testCaptureSizing]' passed (0.000 seconds).
+140-Test Case '-[HRCoreTests.GeometryTests testClampsOutOfRangeAndInvalidInput]' started.
+141-Test Case '-[HRCoreTests.GeometryTests testClampsOutOfRangeAndInvalidInput]' passed (0.000 seconds).
+142-Test Case '-[HRCoreTests.GeometryTests testClickCounter]' started.
+143-Test Case '-[HRCoreTests.GeometryTests testClickCounter]' passed (0.000 seconds).
+144-Test Case '-[HRCoreTests.GeometryTests testMapsCornersAndCentreOnMainDisplay]' started.
+145-Test Case '-[HRCoreTests.GeometryTests testMapsCornersAndCentreOnMainDisplay]' passed (0.000 seconds).
+146-Test Case '-[HRCoreTests.GeometryTests testMapsOntoSecondaryDisplayWithNegativeOrigin]' started.
+147-Test Case '-[HRCoreTests.GeometryTests testMapsOntoSecondaryDisplayWithNegativeOrigin]' passed (0.000 seconds).
+148-Test Case '-[HRCoreTests.GeometryTests testNormalizedRoundTrip]' started.
+149-Test Case '-[HRCoreTests.GeometryTests testNormalizedRoundTrip]' passed (0.000 seconds).
+150-Test Case '-[HRCoreTests.GeometryTests testRestartBackoff]' started.
+151-Test Case '-[HRCoreTests.GeometryTests testRestartBackoff]' passed (0.000 seconds).
+152-Test Suite 'GeometryTests' passed at 2026-10-16 12:21:25.016.
+153:	 Executed 8 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+154-Test Suite 'GoPayloadTests' started at 2026-10-16 12:21:25.016.
+155-Test Case '-[HRCoreTests.GoPayloadTests testAccessLogAsWrittenByGo]' started.
+156-Test Case '-[HRCoreTests.GoPayloadTests testAccessLogAsWrittenByGo]' passed (0.017 seconds).
+157-Test Case '-[HRCoreTests.GoPayloadTests testEncoderCommandsAsMarshalledByGo]' started.
+158-Test Case '-[HRCoreTests.GoPayloadTests testEncoderCommandsAsMarshalledByGo]' passed (0.000 seconds).
+159-Test Case '-[HRCoreTests.GoPayloadTests testEventAsMarshalledByGo]' started.
+160-Test Case '-[HRCoreTests.GoPayloadTests testEventAsMarshalledByGo]' passed (0.000 seconds).
+161-Test Case '-[HRCoreTests.GoPayloadTests testInputAsMarshalledByGo]' started.
+162-Test Case '-[HRCoreTests.GoPayloadTests testInputAsMarshalledByGo]' passed (0.000 seconds).
+163-Test Case '-[HRCoreTests.GoPayloadTests testLocalhostRuleMatchesAgent]' started.
+164-Test Case '-[HRCoreTests.GoPayloadTests testLocalhostRuleMatchesAgent]' passed (0.000 seconds).
+165-Test Case '-[HRCoreTests.GoPayloadTests testResetTrustStoreCommand]' started.
+166-Test Case '-[HRCoreTests.GoPayloadTests testResetTrustStoreCommand]' passed (0.000 seconds).
+167-Test Case '-[HRCoreTests.GoPayloadTests testSignRequestFromGo]' started.
+168-Test Case '-[HRCoreTests.GoPayloadTests testSignRequestFromGo]' passed (0.000 seconds).
+169-Test Case '-[HRCoreTests.GoPayloadTests testStateAsMarshalledByGo]' started.
+170-Test Case '-[HRCoreTests.GoPayloadTests testStateAsMarshalledByGo]' passed (0.000 seconds).
+171-Test Case '-[HRCoreTests.GoPayloadTests testStateWithoutSession]' started.
+172-Test Case '-[HRCoreTests.GoPayloadTests testStateWithoutSession]' passed (0.000 seconds).
+173-Test Suite 'GoPayloadTests' passed at 2026-10-16 12:21:25.036.
+174:	 Executed 9 tests, with 0 failures (0 unexpected) in 0.020 (0.020) seconds
+175-Test Suite 'KeyCodeTests' started at 2026-10-16 12:21:25.036.
+176-Test Case '-[HRCoreTests.KeyCodeTests testAllKeyCodesAreValidMacKeyCodes]' started.
+177-Test Case '-[HRCoreTests.KeyCodeTests testAllKeyCodesAreValidMacKeyCodes]' passed (0.000 seconds).
+178-Test Case '-[HRCoreTests.KeyCodeTests testAllLettersDigitsAndFunctionKeysPresent]' started.
+179-Test Case '-[HRCoreTests.KeyCodeTests testAllLettersDigitsAndFunctionKeysPresent]' passed (0.000 seconds).
+180-Test Case '-[HRCoreTests.KeyCodeTests testCommonCodesPresent]' started.
+181-Test Case '-[HRCoreTests.KeyCodeTests testCommonCodesPresent]' passed (0.000 seconds).
+182-Test Case '-[HRCoreTests.KeyCodeTests testIntrinsicFlags]' started.
+183-Test Case '-[HRCoreTests.KeyCodeTests testIntrinsicFlags]' passed (0.000 seconds).
+184-Test Case '-[HRCoreTests.KeyCodeTests testKnownValues]' started.
+185-Test Case '-[HRCoreTests.KeyCodeTests testKnownValues]' passed (0.000 seconds).
+186-Test Case '-[HRCoreTests.KeyCodeTests testMediaKeys]' started.
+187-Test Case '-[HRCoreTests.KeyCodeTests testMediaKeys]' passed (0.000 seconds).
+188-Test Case '-[HRCoreTests.KeyCodeTests testModifierFlags]' started.
+189-Test Case '-[HRCoreTests.KeyCodeTests testModifierFlags]' passed (0.000 seconds).
+190-Test Case '-[HRCoreTests.KeyCodeTests testNoDuplicateKeyCodesForDistinctKeys]' started.
+191-Test Case '-[HRCoreTests.KeyCodeTests testNoDuplicateKeyCodesForDistinctKeys]' passed (0.000 seconds).
+192-Test Case '-[HRCoreTests.KeyCodeTests testTextChunker]' started.
+193-Test Case '-[HRCoreTests.KeyCodeTests testTextChunker]' passed (0.003 seconds).
+194-Test Suite 'KeyCodeTests' passed at 2026-10-16 12:21:25.040.
+195:	 Executed 9 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
+196-Test Suite 'ModelTests' started at 2026-10-16 12:21:25.040.
+197-Test Case '-[HRCoreTests.ModelTests testAudioControlAndClipboard]' started.
+198-Test Case '-[HRCoreTests.ModelTests testAudioControlAndClipboard]' passed (0.000 seconds).
+199-Test Case '-[HRCoreTests.ModelTests testCommandEncodings]' started.
+200-Test Case '-[HRCoreTests.ModelTests testCommandEncodings]' passed (0.001 seconds).
+201-Test Case '-[HRCoreTests.ModelTests testConfigFieldNames]' started.
+202-Test Case '-[HRCoreTests.ModelTests testConfigFieldNames]' passed (0.000 seconds).
+203-Test Case '-[HRCoreTests.ModelTests testDeviceDisplayNameFallback]' started.
+204-Test Case '-[HRCoreTests.ModelTests testDeviceDisplayNameFallback]' passed (0.000 seconds).
+205-Test Case '-[HRCoreTests.ModelTests testEncoderOtherCommands]' started.
+206-Test Case '-[HRCoreTests.ModelTests testEncoderOtherCommands]' passed (0.000 seconds).
+207-Test Case '-[HRCoreTests.ModelTests testEncoderStart]' started.
+208-Test Case '-[HRCoreTests.ModelTests testEncoderStart]' passed (0.000 seconds).
+209-Test Case '-[HRCoreTests.ModelTests testEncoderStartDefaultsAndClamping]' started.
+210-Test Case '-[HRCoreTests.ModelTests testEncoderStartDefaultsAndClamping]' passed (0.000 seconds).
+211-Test Case '-[HRCoreTests.ModelTests testEventNames]' started.
+--
+221-Test Case '-[HRCoreTests.ModelTests testJSONValueRoundTrip]' started.
+222-Test Case '-[HRCoreTests.ModelTests testJSONValueRoundTrip]' passed (0.000 seconds).
+223-Test Case '-[HRCoreTests.ModelTests testLogResult]' started.
+224-Test Case '-[HRCoreTests.ModelTests testLogResult]' passed (0.002 seconds).
+225:Test Case '-[HRCoreTests.ModelTests testOfflineStateWithNullSessionAndErrors]' started.
+226:Test Case '-[HRCoreTests.ModelTests testOfflineStateWithNullSessionAndErrors]' passed (0.000 seconds).
+227-Test Case '-[HRCoreTests.ModelTests testSignRequestIdIsEchoedVerbatim]' started.
+228-Test Case '-[HRCoreTests.ModelTests testSignRequestIdIsEchoedVerbatim]' passed (0.000 seconds).
+229-Test Case '-[HRCoreTests.ModelTests testStateToleratesMissingFieldsAndUnknownValues]' started.
+230-Test Case '-[HRCoreTests.ModelTests testStateToleratesMissingFieldsAndUnknownValues]' passed (0.000 seconds).
+231-Test Case '-[HRCoreTests.ModelTests testTimestampsInMillisecondsAndRFC3339]' started.
+232-Test Case '-[HRCoreTests.ModelTests testTimestampsInMillisecondsAndRFC3339]' passed (0.001 seconds).
+233-Test Suite 'ModelTests' passed at 2026-10-16 12:21:25.047.
+234:	 Executed 18 tests, with 0 failures (0 unexpected) in 0.006 (0.007) seconds
+235-Test Suite 'MultiMacTests' started at 2026-10-16 12:21:25.047.
+236-Test Case '-[HRCoreTests.MultiMacTests testAccountNotificationsAndLog]' started.
+237-Test Case '-[HRCoreTests.MultiMacTests testAccountNotificationsAndLog]' passed (0.000 seconds).
+238-Test Case '-[HRCoreTests.MultiMacTests testJoinedAndUnclaimedStates]' started.
+239-Test Case '-[HRCoreTests.MultiMacTests testJoinedAndUnclaimedStates]' passed (0.000 seconds).
+240-Test Case '-[HRCoreTests.MultiMacTests testJoinVectorsLoad]' started.
+241-Test Case '-[HRCoreTests.MultiMacTests testJoinVectorsLoad]' passed (0.000 seconds).
+242-Test Case '-[HRCoreTests.MultiMacTests testMacIDFormatting]' started.
+243-Test Case '-[HRCoreTests.MultiMacTests testMacIDFormatting]' passed (0.000 seconds).
+244-Test Case '-[HRCoreTests.MultiMacTests testMacIDFromDigest]' started.
+245-Test Case '-[HRCoreTests.MultiMacTests testMacIDFromDigest]' passed (0.000 seconds).
+246-Test Case '-[HRCoreTests.MultiMacTests testMacIDVectorWithCryptoKit]' started.
+247-Test Case '-[HRCoreTests.MultiMacTests testMacIDVectorWithCryptoKit]' passed (0.000 seconds).
+248-Test Case '-[HRCoreTests.MultiMacTests testOlderAgentWithoutJoinedField]' started.
+249-Test Case '-[HRCoreTests.MultiMacTests testOlderAgentWithoutJoinedField]' passed (0.000 seconds).
+250-Test Case '-[HRCoreTests.MultiMacTests testPendingJoinStateAsMarshalledByGo]' started.
+--
+253-Test Case '-[HRCoreTests.MultiMacTests testStateEncodesGoFieldNames]' passed (0.000 seconds).
+254-Test Case '-[HRCoreTests.MultiMacTests testStatusWhenNotInAccount]' started.
+255-Test Case '-[HRCoreTests.MultiMacTests testStatusWhenNotInAccount]' passed (0.000 seconds).
+256-Test Suite 'MultiMacTests' passed at 2026-10-16 12:21:25.049.
+257:	 Executed 10 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+258-Test Suite 'PresentationTests' started at 2026-10-16 12:21:25.049.
+259-Test Case '-[HRCoreTests.PresentationTests testAccessLogTitles]' started.
+260-Test Case '-[HRCoreTests.PresentationTests testAccessLogTitles]' passed (0.000 seconds).
+261-Test Case '-[HRCoreTests.PresentationTests testDeviceKinds]' started.
+262-Test Case '-[HRCoreTests.PresentationTests testDeviceKinds]' passed (0.001 seconds).
+263-Test Case '-[HRCoreTests.PresentationTests testEventNotifications]' started.
+264-Test Case '-[HRCoreTests.PresentationTests testEventNotifications]' passed (0.001 seconds).
+265:Test Case '-[HRCoreTests.PresentationTests testServerErrorTexts]' started.
+266:Test Case '-[HRCoreTests.PresentationTests testServerErrorTexts]' passed (0.000 seconds).
+267-Test Case '-[HRCoreTests.PresentationTests testSessionTexts]' started.
+268-Test Case '-[HRCoreTests.PresentationTests testSessionTexts]' passed (0.000 seconds).
+269-Test Case '-[HRCoreTests.PresentationTests testSettingsTexts]' started.
+270-Test Case '-[HRCoreTests.PresentationTests testSettingsTexts]' passed (0.000 seconds).
+271-Test Case '-[HRCoreTests.PresentationTests testStatusPrecedence]' started.
+272-Test Case '-[HRCoreTests.PresentationTests testStatusPrecedence]' passed (0.000 seconds).
+273-Test Suite 'PresentationTests' passed at 2026-10-16 12:21:25.053.
+274:	 Executed 7 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+275-Test Suite 'SettingsTests' started at 2026-10-16 12:21:25.053.
+276-Test Case '-[HRCoreTests.SettingsTests testClamping]' started.
+277-Test Case '-[HRCoreTests.SettingsTests testClamping]' passed (0.000 seconds).
+278-Test Case '-[HRCoreTests.SettingsTests testDefaults]' started.
+279-Test Case '-[HRCoreTests.SettingsTests testDefaults]' passed (0.000 seconds).
+280-Test Case '-[HRCoreTests.SettingsTests testPersistenceRoundTripAndLenientDecoding]' started.
+281-Test Case '-[HRCoreTests.SettingsTests testPersistenceRoundTripAndLenientDecoding]' passed (0.001 seconds).
+282-Test Case '-[HRCoreTests.SettingsTests testServerAddressAcceptsBareNames]' started.
+283-Test Case '-[HRCoreTests.SettingsTests testServerAddressAcceptsBareNames]' passed (0.000 seconds).
+284-Test Case '-[HRCoreTests.SettingsTests testServerAddressDevelopmentLocalhost]' started.
+285-Test Case '-[HRCoreTests.SettingsTests testServerAddressDevelopmentLocalhost]' passed (0.000 seconds).
+286-Test Case '-[HRCoreTests.SettingsTests testServerAddressRejections]' started.
+287-Test Case '-[HRCoreTests.SettingsTests testServerAddressRejections]' passed (0.000 seconds).
+288-Test Suite 'SettingsTests' passed at 2026-10-16 12:21:25.055.
+289:	 Executed 6 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+290-Test Suite 'HeartfulnessRemotePackageTests.xctest' passed at 2026-10-16 12:21:25.055.
+291:	 Executed 99 tests, with 0 failures (0 unexpected) in 0.061 (0.066) seconds
+292-Test Suite 'All tests' passed at 2026-10-16 12:21:25.056.
+293:	 Executed 99 tests, with 0 failures (0 unexpected) in 0.061 (0.067) seconds
+294-◇ Test run started.
+295-↳ Testing Library Version: 124.4
+296-↳ Target Platform: arm64e-apple-macos14.0
+297-✔ Test run with 0 tests passed after 0.001 seconds.
+298-==> Heartfulness Remote 0.2.0 (build 2), signing: ad-hoc
+299-    ProductName:		macOS
+300-    ProductVersion:		15.7.9
+301-    BuildVersion:		24G830
+302-==> hr-agent (Go, darwin arm64 + amd64)
+303-go version go1.27.2 darwin/arm64
+304-Architectures in the fat file: /var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T//hr-build-mac.fgLJQj/hr-agent are: x86_64 arm64 
+305-==> HeartfulnessRemote (Swift, release, arm64 + x86_64)
+306-swift-driver version: 1.120.5 Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)
+307-0%: Compute target dependency graph
+308-Building targets in dependency order
+309-Target dependency graph (4 targets)
