@@ -1,0 +1,18 @@
+job: release-summary
+status: success
+workflow: Release
+run_id: 38899666555 (attempt 1)
+run_url: https://github.com/videoproduction-ctrl/heartfulness-remote/actions/runs/38899666555
+commit: 1aa383d8f3533d499b3748f7bd5e0f2941e8a120
+ref: refs/heads/release
+event: push
+time_utc: 2026-10-16T12:27:22Z
+jobs:
+release-go               success
+release-web              success
+release-e2e              success
+release-docker           success
+release-mac-host         success
+release-tauri-macos-15   success
+release-tauri-windows-latest success
+release-security         success
