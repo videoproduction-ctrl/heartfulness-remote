@@ -1,0 +1,17 @@
+[package]
+name = "hr-client-core"
+version = "0.1.0"
+description = "Platform-independent logic of the Heartfulness Remote native client (device key, token, config, URL policy)"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+license = "LicenseRef-Proprietary"
+
+[dependencies]
+base64 = "0.22"
+ed25519-dalek = "2.2"
+rand_core = { version = "0.6.4", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2.5"
+zeroize = "1.8"

@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least privilege for the main window: only the eight Heartfulness Remote commands. No core:*, fs, shell, http or opener permissions are granted to the webview.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-device-key-public",
+    "allow-device-key-sign",
+    "allow-token-get",
+    "allow-token-set",
+    "allow-token-clear",
+    "allow-config-get",
+    "allow-config-set",
+    "allow-open-url"
+  ]
+}

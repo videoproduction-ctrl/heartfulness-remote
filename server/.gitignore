@@ -1,0 +1,7 @@
+# The repository-wide .gitignore ignores dist/. Keep the placeholder that lets
+# the embedded web assets compile without a web build (the Docker image
+# replaces it with the real web/dist).
+!internal/webassets/dist/
+internal/webassets/dist/*
+!internal/webassets/dist/index.html
+/heartfulness-server

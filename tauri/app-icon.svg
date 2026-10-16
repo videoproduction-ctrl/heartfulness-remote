@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Heartfulness Remote app icon source. Regenerate the platform icons
+       in src-tauri/icons with: npm run icons -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4F8DF7"/>
+      <stop offset="1" stop-color="#1D3F94"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E3ECFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="226" y="250" width="572" height="392" rx="48" fill="none" stroke="url(#glow)" stroke-width="40"/>
+  <path d="M452 646 L432 726 M572 646 L592 726 M392 734 H632" fill="none" stroke="url(#glow)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M512 590 C 404 516 360 458 378 404 C 396 350 468 342 512 396 C 556 342 628 350 646 404 C 664 458 620 516 512 590 Z" fill="url(#glow)"/>
+</svg>

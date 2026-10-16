@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-device-key-public"
+description = "Enables the device_key_public command without any pre-configured scope."
+commands.allow = ["device_key_public"]
+
+[[permission]]
+identifier = "deny-device-key-public"
+description = "Denies the device_key_public command without any pre-configured scope."
+commands.deny = ["device_key_public"]

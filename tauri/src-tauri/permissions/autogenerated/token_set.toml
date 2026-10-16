@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-token-set"
+description = "Enables the token_set command without any pre-configured scope."
+commands.allow = ["token_set"]
+
+[[permission]]
+identifier = "deny-token-set"
+description = "Denies the token_set command without any pre-configured scope."
+commands.deny = ["token_set"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-device-key-sign"
+description = "Enables the device_key_sign command without any pre-configured scope."
+commands.allow = ["device_key_sign"]
+
+[[permission]]
+identifier = "deny-device-key-sign"
+description = "Denies the device_key_sign command without any pre-configured scope."
+commands.deny = ["device_key_sign"]

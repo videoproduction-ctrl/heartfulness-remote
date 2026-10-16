@@ -1,0 +1,15 @@
+{
+  "name": "heartfulness-remote-client",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Heartfulness Remote native client (Tauri v2 shell around web/dist)",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build",
+    "icons": "tauri icon app-icon.svg --output src-tauri/icons",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml -p hr-client-core"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

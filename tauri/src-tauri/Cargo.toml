@@ -1,0 +1,45 @@
+[workspace]
+members = [".", "core"]
+resolver = "2"
+
+[package]
+name = "heartfulness-remote-client"
+version = "0.1.0"
+description = "Heartfulness Remote native client (Tauri shell around the web client)"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+license = "LicenseRef-Proprietary"
+
+[[bin]]
+name = "heartfulness-remote"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+hr-client-core = { path = "core" }
+tauri = { version = "2.12", features = [] }
+tauri-plugin-opener = "2.7"
+url = "2.5"
+zeroize = "1.8"
+
+# Device key seed and session token live in the OS credential store.
+# Only the native backend for each OS is compiled in (no mock store in release).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
+
+# Linux is only built for local verification: kernel keyutils (session keyring,
+# not persistent across reboots; no D-Bus daemon needed).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["linux-native"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = "symbols"
