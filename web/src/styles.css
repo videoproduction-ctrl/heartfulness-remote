@@ -707,9 +707,13 @@ a {
 
 .item-text strong {
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap instead of truncating, so names and the "This device" tag stay readable on phones. */
+  overflow-wrap: anywhere;
+}
+
+.item-text strong .tag {
+  margin-left: 6px;
+  vertical-align: 1px;
 }
 
 .approvals-card {
