@@ -150,13 +150,14 @@ If anything ever feels wrong:
 
 | Where | How |
 |---|---|
-| **Mac menu bar** | Click the Heartfulness Remote icon → **Block all connections** |
+| **Mac menu bar** | Click the Heartfulness Remote icon → switch on **Block all connections** |
 | **Mac keyboard** | Press **Control + Option + Command + K** |
-| **The orange bar** | Click **Disconnect** (ends the current session) |
+| **The orange bar on the Mac** | **Block All** (stop everything) or **Disconnect** (end just this session) |
 | **Your phone** | Home → **Block all connections** → **Block** |
 
-Any session ends at once and nobody can connect. To turn it back on: menu bar →
-**Allow connections again**, or on your phone Home → **Allow connections**.
+Any session ends at once and nobody can connect — the status shows **Blocked**.
+To allow connections again: in the Mac menu bar switch **Block all connections**
+off, or on your phone tap Home → **Allow connections**.
 
 ---
 
@@ -177,8 +178,8 @@ Go down this list; most problems are fixed by step 1 or 2.
    If the Mac sleeps, set **System Settings → Battery/Energy → Prevent automatic
    sleeping** (or "Wake for network access").
 2. **Is the Mac on the internet?** Open any website on the Mac.
-3. **Did you switch on the kill switch?** If the status says **Blocked**, choose
-   **Allow connections again**.
+3. **Did you switch on the kill switch?** If the status says **Blocked**, switch
+   **Block all connections** off in the Mac menu (or tap **Allow connections** on your phone).
 4. **Is your web address working?** Open it in a browser. If the page doesn't load:
    - check that your server is running in the Hetzner console (reboot it there if needed),
    - check that duckdns.org still shows your server's IP.
@@ -188,7 +189,23 @@ Go down this list; most problems are fixed by step 1 or 2.
 
 ---
 
-## 9. Staying safe — in plain words
+## 9. Updating the Mac app
+
+1. Download the newest **Heartfulness-Remote-Mac.zip** from the Releases page
+   (link in section 2c) and open it.
+2. Open the new app. It offers to **Move to Applications** — click it (it
+   replaces the old copy).
+3. Because the app is signed for your Mac only (not by Apple), macOS treats each
+   update as a new app. Expect, once per update:
+   - **System Settings → Privacy & Security → Open Anyway**,
+   - a Keychain question — click **Always Allow** (it may ask twice),
+   - **Screen Recording** and **Accessibility** again — the app opens the right
+     setup step for you; switch them on.
+4. Your trusted devices and settings are kept.
+
+---
+
+## 10. Staying safe — in plain words
 
 - Everything between your device and your Mac is encrypted end to end. Your
   server only introduces the two sides; it never sees your screen.
