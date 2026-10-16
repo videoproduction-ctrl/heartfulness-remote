@@ -1,0 +1,133 @@
+165-test device_key::tests::concurrent_first_use_creates_exactly_one_key ... ok
+166-test device_key::tests::corrupt_key_is_reported_not_replaced ... ok
+167-test device_key::tests::creates_key_once_and_persists_it ... ok
+168-test client::tests::origin_change_clears_token ... ok
+169:test device_key::tests::errors_never_contain_the_seed ... ok
+170-test device_key::tests::refuses_non_transcripts ... ok
+171-test device_key::tests::signature_verifies_with_public_key ... ok
+172:test device_key::tests::store_read_failure_never_creates_a_new_key ... ok
+173-test device_key::tests::unpersisted_key_is_not_used ... ok
+174-test config::tests::config_round_trip_and_corruption ... ok
+175-test nav::tests::app_urls ... ok
+176-test nav::tests::blob_urls ... ok
+177-test token::tests::corrupt_stored_token_is_dropped ... ok
+178-test token::tests::rejects_malformed_tokens ... ok
+179-test token::tests::set_get_clear ... ok
+180:test token::tests::store_errors_propagate ... ok
+181-test device_key::tests::matches_cross_language_vectors ... ok
+182-
+183:test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+184-
+185-   Doc-tests hr_client_core
+186-
+187-running 0 tests
+188-
+189:test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+190-
+191-
+192-added 2 packages in 764ms
+193-        Info Looking up installed tauri packages to check mismatched versions...
+194-     Running beforeBuildCommand `npm --prefix ../web ci --ignore-scripts --no-audit && npm --prefix ../web run build`
+195-
+196-added 5 packages in 619ms
+197-
+198-> heartfulness-remote-web@1.0.0 build
+199-> node build.mjs
+200-
+201-
+202-  dist/app.DW5G3PSK.js   147.7kb
+203-  dist/app.MT4FFVTG.css   21.0kb
+204-
+205-⚡ Done in 30ms
+--
+316-  Downloaded tauri-macros v2.7.3
+317-  Downloaded tauri-plugin v2.7.2
+318-  Downloaded tauri-winres v0.3.6
+319-  Downloaded tendril v0.5.1
+320:  Downloaded thiserror v2.0.21
+321-  Downloaded toml_datetime v1.1.2+spec-1.1.0
+322-  Downloaded walkdir v2.5.0
+323-  Downloaded web-time v1.1.0
+324-  Downloaded web_atoms v0.2.6
+325-  Downloaded ico v0.5.0
+326-  Downloaded aho-corasick v1.1.5
+327-  Downloaded cargo_metadata v0.19.2
+328-  Downloaded crossbeam-utils v0.8.23
+329-  Downloaded cssparser v0.37.0
+330-  Downloaded darling v0.24.1
+331-  Downloaded defmt v1.2.0
+332-  Downloaded derive_more v2.1.1
+333-  Downloaded indexmap v1.9.3
+334-  Downloaded jsonptr v0.7.1
+335-  Downloaded log v0.4.34
+336-  Downloaded miniz_oxide v0.8.9
+--
+342-  Downloaded schemars v0.8.22
+343-  Downloaded socket2 v0.6.5
+344-  Downloaded tauri-build v2.7.3
+345-  Downloaded tauri-runtime v2.12.2
+346:  Downloaded thiserror-impl v2.0.21
+347-  Downloaded time-macros v0.2.32
+348-  Downloaded tinyvec v1.13.3
+349-  Downloaded toml v1.1.8+spec-1.1.0
+350-  Downloaded toml_writer v1.1.3+spec-1.1.0
+351-  Downloaded tray-icon v0.25.1
+352-  Downloaded html5ever v0.39.0
+353-  Downloaded cfb v0.14.0
+354-  Downloaded darling_core v0.24.1
+355-  Downloaded security-framework v3.7.0
+356-  Downloaded plist v1.10.1
+357-  Downloaded schemars v0.9.0
+358-  Downloaded tauri-plugin-opener v2.7.2
+359-  Downloaded toml_parser v1.1.5+spec-1.1.0
+360-  Downloaded urlpattern v0.6.0
+361-  Downloaded uuid v1.28.0
+362-  Downloaded hashbrown v0.12.3
+--
+430-   Compiling smallvec v1.16.3
+431-   Compiling yoke v0.8.3
+432-   Compiling version_check v0.9.5
+433-   Compiling zerovec v0.11.8
+434:   Compiling thiserror v2.0.21
+435-   Compiling itoa v1.0.18
+436-   Compiling phf_macros v0.13.1
+437-   Compiling typeid v1.0.3
+438:   Compiling thiserror-impl v2.0.21
+439-   Compiling semver v1.0.28
+440-   Compiling time-core v0.1.9
+441-   Compiling num-conv v0.2.2
+442-   Compiling tinystr v0.8.4
+443-   Compiling phf_codegen v0.13.1
+444-   Compiling ident_case v1.0.1
+445-   Compiling writeable v0.6.4
+446-   Compiling strsim v0.11.1
+447-   Compiling litemap v0.8.3
+448-   Compiling serde_json v1.0.154
+449-   Compiling erased-serde v0.4.10
+450-   Compiling icu_locale_core v2.3.0
+451-   Compiling darling_core v0.24.1
+452-   Compiling potential_utf v0.1.6
+453-   Compiling zerotrie v0.2.5
+454-   Compiling bitflags v2.13.2
+--
+676-   Compiling form_urlencoded v1.2.2
+677-   Compiling idna v1.1.0
+678-   Compiling core-foundation-sys v0.8.7
+679-   Compiling url v2.5.8
+680:   Compiling thiserror v2.0.21
+681-   Compiling deranged v0.5.9
+682-   Compiling time-core v0.1.9
+683-   Compiling powerfmt v0.2.1
+684-   Compiling num-conv v0.2.2
+685-   Compiling time v0.3.55
+686-   Compiling core-foundation v0.10.1
+687-   Compiling aho-corasick v1.1.5
+688-   Compiling objc2-quartz-core v0.3.2
+689-   Compiling objc2-app-kit v0.3.2
+690-   Compiling generic-array v0.14.7
+691-   Compiling typeid v1.0.3
+692-   Compiling simd-adler32 v0.3.10
+693-   Compiling alloc-no-stdlib v3.0.0
+694-   Compiling bytes v1.12.1
+695-   Compiling typenum v1.20.1
+696-   Compiling regex-syntax v0.8.11
