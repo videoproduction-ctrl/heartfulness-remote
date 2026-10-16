@@ -1,0 +1,45 @@
+go version go1.27.2 linux/amd64
+::group::proto (go.work)
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/proto	1.032s
+?   	github.com/videoproduction-ctrl/heartfulness-remote/proto/cmd/genvectors	[no test files]
+::endgroup::
+::group::server (go.work)
+?   	github.com/videoproduction-ctrl/heartfulness-remote/server/cmd/heartfulness-server	[no test files]
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/config	1.010s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/server	4.387s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/store	1.047s
+?   	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/webassets	[no test files]
+::endgroup::
+::group::agent (go.work)
+?   	github.com/videoproduction-ctrl/heartfulness-remote/agent/cmd/hostsim	[no test files]
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/cmd/hr-agent	1.779s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/accesslog	1.052s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/core	10.881s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/files	1.014s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/ipc	1.455s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/mediafile	1.049s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/signaling	1.125s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/trust	1.028s
+::endgroup::
+::group::proto (GOWORK=off)
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/proto	1.032s
+?   	github.com/videoproduction-ctrl/heartfulness-remote/proto/cmd/genvectors	[no test files]
+::endgroup::
+::group::server (GOWORK=off)
+?   	github.com/videoproduction-ctrl/heartfulness-remote/server/cmd/heartfulness-server	[no test files]
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/config	1.010s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/server	4.285s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/store	1.039s
+?   	github.com/videoproduction-ctrl/heartfulness-remote/server/internal/webassets	[no test files]
+::endgroup::
+::group::agent (GOWORK=off)
+?   	github.com/videoproduction-ctrl/heartfulness-remote/agent/cmd/hostsim	[no test files]
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/cmd/hr-agent	1.864s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/accesslog	1.482s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/core	11.090s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/files	1.147s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/ipc	1.447s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/mediafile	1.090s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/signaling	1.127s
+ok  	github.com/videoproduction-ctrl/heartfulness-remote/agent/internal/trust	1.028s
+::endgroup::
