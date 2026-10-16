@@ -12,7 +12,7 @@ have approved can connect.
 
 | Piece | Where it lives | What it does |
 |---|---|---|
-| **Heartfulness Remote** (Mac app) | Your Mac, in the menu bar (top right) | Shares your Mac's screen and lets approved devices control it |
+| **Heartfulness Remote** (Mac app) | Each of your Macs, in the menu bar (top right) | Shares that Mac's screen, shows its **Mac ID**, and lets approved devices control it |
 | **Your web address** | e.g. `https://heartfulness-remote.duckdns.org` | Open it in any browser to connect — nothing to install |
 | **Heartfulness Remote** (desktop app) | Optional, on other Macs or Windows PCs | The same thing as the web page, as an app |
 | **Your phone** | Your pocket | Signs you in (passkey) and approves new devices |
@@ -130,6 +130,39 @@ Every new browser or computer must be approved before it can connect.
 **Desktop app (Mac or Windows):** download it from the same Releases page, open
 it, type your web address, then click **Sign in** — your browser opens; sign in
 there and type the code the app shows. Then approve it as above.
+
+---
+
+## 4b. More Macs — like TeamViewer, but yours
+
+You can install Heartfulness Remote on **as many Macs as you like** (up to 20).
+Every Mac shows its own **Mac ID** (for example `482 913 557`) in its menu-bar
+panel, and you can control any of them from anywhere.
+
+**Add another Mac**
+1. Install Heartfulness Remote on the new Mac (section 2c) and type your web address
+   in its setup window.
+2. The new Mac shows **"Add this Mac to your account"** with a QR code, its **Mac ID**
+   and a **code** like `K7QP-3MZD-WX2R-9TFA`.
+3. Either point your phone's camera at the QR code and tap **Add this Mac**, or on any
+   device you already use, open your web address → **Add a Mac** → type the Mac ID and
+   the code → **Add**.
+4. Done — the new Mac appears in **Your Macs**.
+
+**Connect to any of your Macs**
+- From a browser or phone: open your web address → **Your Macs** → **Connect** on the
+  Mac you want.
+- From one of your Macs: click the Heartfulness Remote menu-bar icon →
+  **Connect to Another Mac…** (it opens your web address).
+- The first time a computer connects to a particular Mac, tap **Ask for access** and
+  approve it (on your phone or on that Mac — check the 6-digit code). Each Mac decides
+  for itself, so approving your laptop for the Studio Mac doesn't let it into the Edit
+  Bay Mac.
+- When you approve, compare the **Mac ID** on the screen with the one shown on the
+  real Mac.
+
+**Remove a Mac from your account**: Your Macs → **…** on that Mac's card →
+**Remove this Mac from my account**.
 
 ---
 

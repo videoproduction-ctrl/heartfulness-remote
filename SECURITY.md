@@ -1,6 +1,6 @@
 # Heartfulness Remote — Security
 
-Version 0.1.0 · Normative protocol: [docs/PROTOCOL.md](docs/PROTOCOL.md) ·
+Version 0.2.0 (multiple Macs, PROTOCOL.md §10) · Normative protocol: [docs/PROTOCOL.md](docs/PROTOCOL.md) ·
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## 1. What we protect
@@ -62,7 +62,18 @@ comparison) decides who may *control the Mac*.
 6. **Windows Credential Manager** is not per-application: another program
    running as the same Windows user can read the Tauri client's device key and
    token. (macOS Keychain items are bound to the app's code signature.)
-7. **Secure Enclave wrapping** of the host key is attempted at runtime; on
+7. **First contact with a Mac you haven't paired with.** When a device asks a Mac
+   it has never paired with for access, it learns that Mac's key from the server.
+   A compromised server could present a fake Mac and approve the request itself;
+   the device would then show a fake screen (the real Mac stays safe, but what you
+   type into the fake one could be captured). Mitigation: the approval screen shows
+   the Mac ID — compare it with the ID on the real Mac's screen; adding a Mac
+   (join) is protected by the code shown on that Mac (80-bit secret + host
+   confirmation MAC), and a scanned join link must be confirmed by the owner.
+8. **Waiting-to-join slots** (5 per server, 2 per IP) can be occupied by an
+   attacker to block adding Macs (denial of service only); `HR_HOST_PUBKEY`
+   allow-list removes it.
+9. **Secure Enclave wrapping** of the host key is attempted at runtime; on
    failure the app falls back to Keychain-only storage and shows which
    protection is active.
 
@@ -95,6 +106,10 @@ manual verification on a real Mac / VPS · ⬜ not done
 | Revocation (Mac or approved phone, signed) takes effect immediately | ✅ | agent `TestKillAndRevokeRequestsSigned`; e2e journey 8 |
 | Server cannot add a device (cert must be host-signed; Mac authoritative via trust-sync) | ✅ | server `TestPairingAndSessionRelay`, cert-rejection tests |
 | Native app login via typed link code (no code in URLs) | ✅ | server `TestLinkFlow` |
+| Multiple Macs: each Mac pins its own devices; a device approved on one Mac cannot touch another | ✅ | server `multihost_test.go`; e2e macs 5–7 |
+| Adding a Mac needs the code shown on that Mac (80-bit, single use) and the Mac's confirmation MAC; server can't forge either | ✅ | server join tests (real crypto); agent `join_test.go`; web vectors; e2e macs 1–3 |
+| Scanned join links require the owner to confirm the Mac (no silent add via a malicious link) | ✅ | e2e macs 3 |
+| Macs waiting to be added get no TURN credentials | ✅ | server multi-host tests |
 
 ### Server hardening
 | Control | Status | Evidence |

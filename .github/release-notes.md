@@ -1,3 +1,5 @@
+**New in 0.2.0: control several Macs.** Install Heartfulness Remote on each Mac; every Mac shows its own Mac ID. Add a Mac to your account by scanning its code with your phone (or typing its Mac ID and code), then connect to any of your Macs from any browser, phone or computer — or from a Mac with "Connect to Another Mac…".
+
 ## What to download
 
 You only need the files for the computers you use. The **Mac you want to control** needs the first file. To control it from **another computer**, either open your Heartfulness Remote web address in any browser (nothing to install), or install one of the client apps below.
