@@ -232,7 +232,8 @@ export class App {
     this.root.appendChild(v.el);
     this.root.dataset["view"] = v.name;
     document.body.dataset["view"] = v.name;
-    const focusTarget = v.el.querySelector<HTMLElement>("[autofocus]") ?? v.el.querySelector<HTMLElement>("h1");
+    const focusTarget =
+      v.el.querySelector<HTMLElement>("[autofocus]") ?? [...v.el.querySelectorAll<HTMLElement>("h1")].find((e) => !e.closest("[hidden]")) ?? null;
     if (focusTarget) {
       if (!focusTarget.hasAttribute("tabindex") && focusTarget.tagName === "H1") focusTarget.tabIndex = -1;
       focusTarget.focus({ preventScroll: true });
