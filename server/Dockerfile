@@ -35,7 +35,7 @@ RUN rm -rf go.mod dist && npm run build && \
     if [ ! -f dist/index.html ]; then echo "ERROR: 'npm run build' did not produce web/dist/index.html" >&2; exit 1; fi
 
 # ---- 2. server binary ----
-FROM golang:1.24.13-alpine AS build
+FROM golang:1.27.2-alpine AS build
 ENV CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly
 WORKDIR /src
 COPY proto/ ./proto/

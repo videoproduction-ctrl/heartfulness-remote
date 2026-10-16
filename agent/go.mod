@@ -1,8 +1,8 @@
 module github.com/videoproduction-ctrl/heartfulness-remote/agent
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.24.7
+toolchain go1.27.2
 
 require (
 	github.com/coder/websocket v1.8.15
