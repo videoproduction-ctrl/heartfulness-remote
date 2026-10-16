@@ -352,3 +352,30 @@ The agent owns `pins.json` (trusted devices) and `access-log.jsonl` in
 the access log is a hash chain (`entry.prev = H(previous line)`, plus
 `mac = HMAC(storageKey, line-without-mac)`), so edits, deletions and
 re-ordering are detected.
+
+### 9.1 Implementation notes (the Go agent is authoritative where this section and the tables above differ)
+
+* `STATE`: device and session-device objects also carry `fingerprint`; `session`
+  carries `codec`; timestamps are unix **seconds** and `0` means "never";
+  `pending[].sas` is pre-formatted (`"196 924"`); `rttMs` is an integer;
+  `setupURL` is present only while the server is online **and** unclaimed.
+* `EVENT.detail` is always a string. Additional events: `trust-store-*`,
+  `log-tampered`, `setup-failed`.
+* `ENCODER.start.profile` is `"high"`, `"main"` or `"baseline"` (H.264) and the
+  `bitrate` command may also carry a new `fps`.
+* `SIGN_REQUEST.id` is a number, starting at 1 for each helper process; frames
+  from a previous helper instance must be ignored.
+* `COMMAND` also supports `reset-trust-store` (forget all pinned devices after a
+  tamper alarm; devices must pair again).
+* `settings.maxKbps` is clamped to 1 000–250 000; plain `http://` server URLs
+  are accepted only for `localhost` and loopback IPs.
+* Access-log entries: `{seq, ts, event, device?, deviceFp?, transport?,
+  durationSec?, file?, size?, detail?, prev, mac}`; their event names
+  (`session-start`, `session-end`, `pairing-approved`, `device-added`,
+  `log-tamper-detected`, …) are distinct from `EVENT` names.
+* Data channel: a failed `get` is reported as `file-error` with `reqId` (and no
+  `id`, because no transfer started). `bye` / `session-end` reasons include
+  `host-shutdown`, `host-disconnected`, `offer-rejected`, `no-common-codec`,
+  `connect-timeout`, `offer-timeout`, `connection-failed`, `connection-closed`,
+  `trust-reset`, `browser-disabled`, `idle-timeout`, `killed`, `revoked`, `user`.
+* `/ws/client` `ready.device` also carries `cert` when approved.
