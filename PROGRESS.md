@@ -14,9 +14,12 @@ _Last updated: 2026-10-16 (session 1, cloud container)_
 - `tauri/` native client — 27 Rust tests; CI builds macOS dmg + Windows msi/exe
 - `deploy/` cloud-init + provision + compose (caddy 2.11.7, coturn 4.18.0) — verified end to end
   on a simulated Ubuntu 24.04 VPS; `scripts/test-deploy.sh` runs in CI
-- `e2e/` — 14 tests pass: 10 owner journeys + 4 hostile-server attack tests
+- `e2e/` — 22 tests pass: 10 owner journeys + 4 hostile-server attack tests + 8 multi-Mac
 - CI fully green on GitHub (go, web, docker, e2e, mac-host, tauri mac+win, security)
 - Release v0.1.0 published from the `release` branch (see "Releasing")
+- **Multiple Macs (HR1.1, PROTOCOL.md §10)**: up to 20 Macs per account, Mac IDs, add a Mac by
+  QR (with confirm) or Mac ID + code, per-Mac approvals, "Connect to Another Mac…" on every Mac.
+  22/22 e2e pass (journey 10, attacks 4, macs 8); version 0.2.0 (VERSION file)
 
 ## NEXT (needs the owner)
 1. Owner: free name at **duckdns.org** (sign in with GitHub, add `heartfulness-remote`)
