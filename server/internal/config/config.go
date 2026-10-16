@@ -30,7 +30,7 @@ type Config struct {
 	TurnPort       int
 	TrustedProxies []netip.Prefix
 	HostPubAllow   [][]byte // optional allow-list of host keys (32 bytes each); empty = any
-	WebDir         string // optional on-disk web client (instead of the embedded copy)
+	WebDir         string   // optional on-disk web client (instead of the embedded copy)
 	Dev            bool
 }
 

@@ -327,7 +327,9 @@ if ! [[ "$TURN_SECRET" =~ ^[0-9a-f]{64}$ ]]; then
 	status "  generated a new TURN secret"
 fi
 HOST_PUBKEY="$(read_kv "$ENV_FILE" HR_HOST_PUBKEY)"
-[[ "$HOST_PUBKEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || HOST_PUBKEY=""
+# Optional comma-separated allow-list of Mac host keys (PROTOCOL.md §10.2).
+HOST_PUBKEY="${HOST_PUBKEY// /}"
+[[ "$HOST_PUBKEY" =~ ^[A-Za-z0-9_-]{43}(,[A-Za-z0-9_-]{43})*$ ]] || HOST_PUBKEY=""
 
 (
 	umask 077

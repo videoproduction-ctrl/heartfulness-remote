@@ -82,6 +82,10 @@ export class App {
   private signalOffs: Array<() => void> = [];
   private readonly macIds = new Map<string, string>();
   private macsSeq = 0;
+  private meRun: Promise<void> | null = null;
+  private meDirty = false;
+  private meTimer: ReturnType<typeof setTimeout> | null = null;
+  private meAt = 0;
 
   constructor(
     readonly platform: Platform,
@@ -176,7 +180,7 @@ export class App {
     if (m) m.deviceStatus = "approved";
     this.emit("macs");
     if (prev !== this.status) this.onStatusChanged(prev);
-    void this.refreshMe();
+    this.refreshSoon();
   }
 
   private async toMacs(hosts: HostInfo[], statusOf: (h: HostInfo) => DeviceStatus): Promise<Mac[]> {
@@ -329,6 +333,7 @@ export class App {
     this.show(loadingView("Connecting…"));
     try {
       this.me = await this.api.me();
+      this.meAt = Date.now();
     } catch (e) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
         await this.toLogin();
@@ -456,9 +461,9 @@ export class App {
     const offs = this.signalOffs;
     offs.push(sig.on("ready", (m) => void this.applyReady(parseReady(m))));
     offs.push(sig.on("host-status", (m) => this.onHostStatus(m)));
-    offs.push(sig.on("devices-changed", () => void this.refreshMe()));
-    offs.push(sig.on("hosts-changed", () => void this.refreshMe()));
-    offs.push(sig.on("host-joined", () => void this.refreshMe()));
+    offs.push(sig.on("devices-changed", () => this.refreshSoon()));
+    offs.push(sig.on("hosts-changed", () => this.refreshSoon()));
+    offs.push(sig.on("host-joined", () => this.refreshSoon()));
     offs.push(sig.on("approval-needed", (m) => void this.onApprovalNeeded(m)));
     offs.push(sig.on("approval-closed", (m) => this.onApprovalClosed(m)));
     offs.push(
@@ -480,7 +485,7 @@ export class App {
     if (pub === "" && this.macs.length === 1) pub = this.macs[0]!.pub; // older single-Mac server
     const mac = this.mac(pub);
     if (!mac) {
-      if (pub !== "") void this.refreshMe(); // a Mac we don't know yet
+      if (pub !== "") this.refreshSoon(); // a Mac we don't know yet
       return;
     }
     if (typeof m["online"] === "boolean") mac.online = m["online"];
@@ -491,21 +496,58 @@ export class App {
     this.emit("macs");
   }
 
-  async refreshMe(): Promise<void> {
+  /**
+   * Re-reads /api/me. Calls are coalesced: at most one request is in flight,
+   * plus one more if anything asked again meanwhile (the server pushes
+   * hosts-changed, devices-changed and host-joined in bursts, and /api/* is
+   * rate limited). Resolves once a fetch that started after this call is done.
+   */
+  refreshMe(): Promise<void> {
+    this.meDirty = true;
+    if (!this.meRun) {
+      this.meRun = (async () => {
+        try {
+          while (this.meDirty) {
+            this.meDirty = false;
+            await this.fetchMe();
+          }
+        } finally {
+          this.meRun = null;
+        }
+      })();
+    }
+    return this.meRun;
+  }
+
+  /** Refreshes /api/me unless it was read within the last `ms` milliseconds. */
+  refreshMeIfStale(ms: number): Promise<void> {
+    return Date.now() - this.meAt < ms ? Promise.resolve() : this.refreshMe();
+  }
+
+  /** Debounced refresh for server push events. */
+  private refreshSoon(): void {
+    if (this.meTimer) return;
+    this.meTimer = setTimeout(() => {
+      this.meTimer = null;
+      void this.refreshMe();
+    }, 150);
+  }
+
+  private async fetchMe(): Promise<void> {
     let me: Me;
     try {
       me = await this.api.me();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
+        this.meDirty = false;
         await this.toLogin();
       }
       return;
     }
     this.me = me;
-    await this.setMacs(me.hosts, (() => {
-      const of = statusFromMe(me, this.devicePub);
-      return (h: HostInfo) => of(h.pub);
-    })());
+    this.meAt = Date.now();
+    const of = statusFromMe(me, this.devicePub);
+    await this.setMacs(me.hosts, (h: HostInfo) => of(h.pub));
     this.emit("me");
   }
 

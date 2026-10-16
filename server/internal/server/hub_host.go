@@ -25,7 +25,8 @@ func (h *hub) onHost(c *conn, m *inMsg) bool {
 			switch m.Type {
 			case "claim-commit":
 				if b, err := proto.UnB64Len(m.ClaimCommit, 32); err == nil {
-					c.claimCommit = b
+					// A new code: joins started for the previous one cannot complete.
+					c.claimCommit, c.joins = b, nil
 				} else {
 					c.sendErr("bad-request", "for", m.Type)
 				}

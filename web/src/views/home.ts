@@ -549,7 +549,7 @@ export function homeView(app: App): View {
     }),
   );
   render();
-  void app.refreshMe();
+  void app.refreshMeIfStale(3000);
 
   const el = page(
     "home",

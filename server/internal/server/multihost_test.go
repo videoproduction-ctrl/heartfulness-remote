@@ -333,6 +333,23 @@ func TestJoinStaleCode(t *testing.T) {
 		t.Fatalf("finish after a new code: %d %s", r.code, r.body)
 	}
 	hB.expectNone(50 * time.Millisecond)
+
+	// A join finished for the old code cannot complete once the Mac shows a new one.
+	hB.send(map[string]any{"type": "claim-commit", "claimCommit": proto.B64(hB.commit)})
+	time.Sleep(50 * time.Millisecond)
+	c2 := phone.from("198.51.100.31")
+	r = c2.post("/api/hosts/join/begin", withProof(t, c2, phoneDev, map[string]any{"hostPub": hB.pubB64, "claim": proto.B64(kc)}))
+	r = c2.post("/api/hosts/join/finish", withProof(t, c2, phoneDev, map[string]any{"flowId": str(r.json(t), "flowId"), "setupMac": proto.B64(proto.SetupMAC(ka, hB.pub, phoneDev.pub, "Phone", "phone"))}))
+	if r.code != 200 {
+		t.Fatalf("finish: %d %s", r.code, r.body)
+	}
+	hB.expect("setup-device")
+	hB.send(map[string]any{"type": "claim-commit", "claimCommit": proto.B64(randBytes(32))})
+	hB.send(map[string]any{"type": "device-approved", "cert": hB.cert(phoneDev.pub, "Phone", "phone"), "hostMac": proto.B64(proto.HostConfirmMAC(ka, hB.pub, phoneDev.pub))})
+	hB.expectError("not-bound")
+	if _, ok := e.srv.hub.hostInfo(hB.pubB64); ok {
+		t.Fatal("Mac bound by a join for an old code")
+	}
 }
 
 func TestPendingLookupByMacID(t *testing.T) {

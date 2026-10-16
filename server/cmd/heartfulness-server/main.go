@@ -196,7 +196,7 @@ func reset(w io.Writer, args []string) error {
 	if err := store.WriteFile(dir, st); err != nil {
 		return err
 	}
-	fmt.Fprintln(w, "Reset complete. Start the server; the Mac will show a new setup QR code.")
+	fmt.Fprintln(w, "Reset complete. Start the server; each Mac will show a new setup QR code. Set up one Mac, then add the others.")
 	return nil
 }
 

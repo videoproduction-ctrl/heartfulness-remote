@@ -463,3 +463,38 @@ GET /api/me → {hosts:[{pub, macId, name, online, state, sessionDeviceName, cla
                passkeys:[…]}
 IPC STATE   adds macId, joined, joinURL?, joinCode?   (setupURL unchanged: unclaimed server only)
 ```
+
+### 10.5 Server implementation notes (HR1.1)
+
+* `GET /api/hosts/pending` carries the device proof as query parameters
+  (`?macId=…&devicePub=…&nonce=…&sig=…`); `macId` may contain spaces or dashes.
+  Only waiting Macs that have sent a `claimCommit` are found (`404 not-found`;
+  `409 ambiguous` if two match). All `/api/hosts/*` endpoints are in the auth
+  rate-limit class; a wrong `claim` is an auth failure (lockout).
+* `join/begin` errors: `404 host-not-connected`, `403 bad-claim`,
+  `409 already-joined`, `409 too-many-hosts`. The flow is single-use and bound
+  to the session and device that began it. `join/finish` → `{ok:true}` once
+  `setup-device` is sent (errors: `400 unknown-flow`, `409 host-not-connected`
+  also when the Mac has shown a new code since `begin`, `409 too-many-hosts`);
+  the result arrives as `host-joined` on that device's sockets only. If the
+  account is full when the Mac answers, the device gets
+  `error {code:"too-many-hosts", for:"join", hostPub}` and nothing is bound.
+* `POST /api/hosts/remove` refuses the last Mac (`409 last-host`); use
+  `heartfulness-server reset` instead. Devices left with no approval on any
+  Mac are deleted.
+* A waiting Mac (unbound key) is closed with `error {code:"join-expired"}` 30
+  minutes after it connected; it should reconnect. A new `claim-commit`
+  cancels joins started for the previous code. Unbound Macs get
+  `iceServers: []` (TURN credentials only once `joined:true`). Macs still
+  waiting when the server gets claimed receive `host-ready {claimed:true,
+  joined:false}` in-band.
+* The claim's `device-approved` may carry `hostMac`; the device then gets
+  `pair-approved {hostPub, cert, hostMac?}` **and** `host-joined {hostPub,
+  cert, hostMac?}`. For a join, `hostMac` is required.
+* Client errors for routed messages: `bad-request` (missing/invalid
+  `hostPub`), `unknown-host` (not bound), `not-approved` (not approved on
+  that Mac), `host-offline`, `host-mismatch` (`hostPub` differs from the Mac
+  of the `requestId`/`sessionId`); they carry `hostPub` where known.
+  `pair-pending` also carries `hostPub`. `pair-reveal` may carry `hostPub`
+  (checked if present).
+* `/api/me` `hosts[].lastSeen` is "now" while the Mac is online.
