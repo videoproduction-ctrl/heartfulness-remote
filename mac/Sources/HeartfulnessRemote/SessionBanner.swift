@@ -2,21 +2,24 @@ import AppKit
 import SwiftUI
 
 /// The always-visible "being controlled" banner: one borderless, non-activating panel per
-/// screen, above everything (including full-screen apps), with a Disconnect button.
+/// screen, above everything (including full-screen apps), with "Disconnect" and "Block All"
+/// (kill switch) buttons.
 /// It is excluded from the stream because the capture filter excludes this app.
 @MainActor
 final class SessionBanner {
     private var panels: [NSPanel] = []
     private var deviceName: String?
     private var onDisconnect: (() -> Void)?
+    private var onBlock: (() -> Void)?
     private var screenObserver: NSObjectProtocol?
 
     var isVisible: Bool { deviceName != nil }
 
-    func show(deviceName: String, onDisconnect: @escaping () -> Void) {
+    func show(deviceName: String, onDisconnect: @escaping () -> Void, onBlock: @escaping () -> Void) {
         if self.deviceName == deviceName && !panels.isEmpty { return }
         self.deviceName = deviceName
         self.onDisconnect = onDisconnect
+        self.onBlock = onBlock
         rebuild()
         if screenObserver == nil {
             screenObserver = NotificationCenter.default.addObserver(
@@ -34,6 +37,7 @@ final class SessionBanner {
     func hide() {
         deviceName = nil
         onDisconnect = nil
+        onBlock = nil
         for panel in panels { panel.orderOut(nil) }
         panels.removeAll()
         if let screenObserver {
@@ -52,9 +56,9 @@ final class SessionBanner {
     }
 
     private func makePanel(on screen: NSScreen, deviceName: String) -> NSPanel {
-        let content = SessionBannerView(deviceName: deviceName) { [weak self] in
-            self?.onDisconnect?()
-        }
+        let content = SessionBannerView(deviceName: deviceName,
+                                        onDisconnect: { [weak self] in self?.onDisconnect?() },
+                                        onBlock: { [weak self] in self?.onBlock?() })
         let hosting = NSHostingView(rootView: content)
         let fitting = hosting.fittingSize
         let width = min(max(fitting.width, 360), screen.visibleFrame.width - 40)
@@ -90,6 +94,7 @@ final class SessionBanner {
 struct SessionBannerView: View {
     let deviceName: String
     let onDisconnect: () -> Void
+    let onBlock: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -109,6 +114,15 @@ struct SessionBannerView: View {
             .tint(.white.opacity(0.25))
             .controlSize(.regular)
             .accessibilityHint("Ends the remote session immediately")
+            Button(action: onBlock) {
+                Label("Block All", systemImage: "hand.raised.fill")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.white.opacity(0.25))
+            .controlSize(.regular)
+            .help("Disconnect and refuse every connection until you allow them again (⌃⌥⌘K)")
+            .accessibilityHint("Disconnects and blocks all connections until you allow them again")
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16)

@@ -45,6 +45,19 @@ struct MenuBarPanel: View {
                 }
             }
 
+            if let notice = model.notice {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text(notice)
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("OK") { model.notice = nil }
+                        .controlSize(.small)
+                }
+            }
+
             if model.state.server == .online && !model.state.claimed && model.agentRunning {
                 Button {
                     model.openSetup(steps: [.pairPhone])

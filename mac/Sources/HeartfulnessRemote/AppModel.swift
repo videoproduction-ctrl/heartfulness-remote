@@ -461,9 +461,11 @@ final class AppModel: ObservableObject {
     }
 
     private func showBanner(for deviceName: String) {
-        banner.show(deviceName: deviceName) { [weak self] in
-            self?.disconnectNow()
-        }
+        // Both actions run on the next main-loop turn: blocking hides (and releases) the banner
+        // panel whose button is being clicked.
+        banner.show(deviceName: deviceName,
+                    onDisconnect: { onMain { AppModel.shared.disconnectNow() } },
+                    onBlock: { onMain { AppModel.shared.setConnectionsBlocked(true) } })
         if sessionActivity == nil {
             sessionActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiated, .idleDisplaySleepDisabled, .latencyCritical],
