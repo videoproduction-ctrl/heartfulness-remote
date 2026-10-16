@@ -1,0 +1,10 @@
+job: tauri-macos-15
+status: success
+workflow: Release
+run_id: 38899666555 (attempt 1)
+run_url: https://github.com/videoproduction-ctrl/heartfulness-remote/actions/runs/38899666555
+commit: 1aa383d8f3533d499b3748f7bd5e0f2941e8a120
+ref: refs/heads/release
+event: push
+runner: macOS/ARM64
+time_utc: 2026-10-16T12:27:11Z
