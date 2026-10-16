@@ -30,6 +30,13 @@ _Last updated: 2026-10-16 (session 1, cloud container)_
 ## WAITING ON OWNER
 - duckdns.org name (step 1 above)
 
+## LIVE BUILD PAGE (for the owner)
+https://claude.ai/artifact/Tyop7rATmbLh99gLStXMjs — private page; Claude updates it with the
+ArtifactData tool: `board/status` (headline, needs[], note, updatedAt), `steps/sNN`
+(order, title, detail, state done|active|todo|waiting|failed), `board/log` (entries[]),
+`shots/pNN` (order, title, caption, url from an asset upload). Source: e2e/demo/out/live-build.html
+(git-ignored; republish with the Artifact tool and that file path or the URL).
+
 ## RELEASING (this cloud session can push branches, but not tags or workflow dispatches)
 1. bump `VERSION` (x.y.z) on main, push, wait for CI green
 2. `git push origin main:release` → `.github/workflows/release.yml` builds everything,

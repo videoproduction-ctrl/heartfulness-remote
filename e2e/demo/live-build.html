@@ -1,0 +1,274 @@
+<title>Heartfulness Remote Build</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+  /* Layout: an edit-suite screen — program monitor (latest screenshot) beside the render queue (build steps), log strip below. */
+  :root {
+    --bg: #eef0f1;
+    --panel: #ffffff;
+    --panel-2: #f6f7f8;
+    --line: #d9dde0;
+    --fg: #16191c;
+    --muted: #5d656c;
+    --tally: #d6332b;
+    --good: #1f8a4c;
+    --warn: #b7791f;
+    --bad: #c2362f;
+    --active: #2f6fdb;
+    --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101214; --panel: #181b1e; --panel-2: #1e2226; --line: #2b3035;
+      --fg: #e9ecee; --muted: #9aa3ab; --tally: #ff5148; --good: #3fbf74;
+      --warn: #e0a43a; --bad: #ff6a5f; --active: #6aa1ff; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101214; --panel: #181b1e; --panel-2: #1e2226; --line: #2b3035;
+    --fg: #e9ecee; --muted: #9aa3ab; --tally: #ff5148; --good: #3fbf74;
+    --warn: #e0a43a; --bad: #ff6a5f; --active: #6aa1ff; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 40px;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 16px; }
+  header.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(20px, 3vw, 28px); letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  .tally { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 12px; color: var(--muted); }
+  .tally .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .tally.live { color: var(--tally); border-color: color-mix(in srgb, var(--tally) 45%, var(--line)); }
+  .tally.live .dot { background: var(--tally); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .tally.live .dot { animation: none; } }
+  .headline { font-size: 17px; color: var(--fg); margin: 0; max-width: 70ch; }
+  .meta { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 880px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+  .panel > h2 { font-family: var(--font-display); font-weight: 700; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+  .monitor-screen { background: #000; aspect-ratio: 16 / 10; max-width: 100%; display: grid; place-items: center; border-radius: 0; overflow: hidden; position: relative; }
+  .monitor-screen img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .monitor-screen .empty { color: #9aa3ab; font-family: var(--font-mono); font-size: 13px; padding: 24px; text-align: center; }
+  .slate { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .slate strong { font-family: var(--font-display); font-weight: 600; }
+  .slate .tc { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .filmstrip { display: flex; gap: 8px; padding: 12px 16px; overflow-x: auto; }
+  .filmstrip button { flex: 0 0 auto; width: 112px; border: 2px solid transparent; border-radius: 6px; padding: 0; background: var(--panel-2); cursor: pointer; overflow: hidden; }
+  .filmstrip button[aria-current="true"] { border-color: var(--active); }
+  .filmstrip button:focus-visible { outline: 2px solid var(--active); outline-offset: 2px; }
+  .filmstrip img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; }
+  .filmstrip span { display: block; font-size: 11px; color: var(--muted); padding: 4px 6px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue { list-style: none; margin: 0; padding: 4px 0; }
+  .queue li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .queue li:last-child { border-bottom: 0; }
+  .queue .ico { width: 14px; height: 14px; margin-top: 4px; border-radius: 50%; border: 2px solid var(--muted); }
+  .queue [data-state="done"] .ico { background: var(--good); border-color: var(--good); }
+  .queue [data-state="active"] .ico { border-color: var(--active); border-top-color: transparent; animation: spin 1s linear infinite; }
+  .queue [data-state="failed"] .ico { background: var(--bad); border-color: var(--bad); }
+  .queue [data-state="waiting"] .ico { background: var(--warn); border-color: var(--warn); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .queue [data-state="active"] .ico { animation: none; } }
+  .queue .t { font-weight: 600; min-width: 0; }
+  .queue .d { grid-column: 2 / 4; color: var(--muted); font-size: 14px; min-width: 0; }
+  .queue .s { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .queue [data-state="done"] .s { color: var(--good); }
+  .queue [data-state="active"] .s { color: var(--active); }
+  .queue [data-state="failed"] .s { color: var(--bad); }
+  .queue [data-state="waiting"] .s { color: var(--warn); }
+  .needs { padding: 12px 16px 16px; display: grid; gap: 8px; }
+  .needs ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  .needs p { margin: 0; color: var(--muted); }
+  .log { list-style: none; margin: 0; padding: 6px 0; max-height: 360px; overflow-y: auto; }
+  .log li { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 6px 16px; font-size: 14px; }
+  .log time { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .log li[data-kind="good"] span { color: var(--good); }
+  .log li[data-kind="bad"] span { color: var(--bad); }
+  .empty-note { padding: 16px; color: var(--muted); }
+  .side { display: grid; gap: 16px; min-width: 0; }
+  a { color: var(--active); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Heartfulness Remote</h1>
+      <span class="tally" id="tally"><span class="dot"></span><span id="tally-text">Connecting</span></span>
+    </div>
+    <span class="meta" id="updated">Waiting for the first update…</span>
+  </header>
+  <p class="headline" id="headline">This page shows the build as it happens. Updates appear here on their own.</p>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="mon-h">
+      <h2 id="mon-h"><span>Program monitor</span><span id="shot-count"></span></h2>
+      <div class="slate">
+        <strong id="shot-title">No screenshots yet</strong>
+        <span class="tc" id="shot-time"></span>
+      </div>
+      <div class="monitor-screen" id="screen"><div class="empty">Screenshots of the real interface appear here as each part is tested.</div></div>
+      <p class="empty-note" id="shot-caption" hidden></p>
+      <div class="filmstrip" id="strip" aria-label="Earlier screenshots"></div>
+    </section>
+
+    <div class="side">
+      <section class="panel" aria-labelledby="q-h">
+        <h2 id="q-h"><span>Render queue</span><span id="q-sum"></span></h2>
+        <ol class="queue" id="queue"><li class="empty-note">The build steps load in a moment.</li></ol>
+      </section>
+      <section class="panel" aria-labelledby="n-h">
+        <h2 id="n-h"><span>What I need from you</span></h2>
+        <div class="needs" id="needs"><p>Nothing right now.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel" aria-labelledby="l-h">
+    <h2 id="l-h"><span>Log</span><span class="meta">newest first</span></h2>
+    <ol class="log" id="log"><li><time></time><span>The log fills in as work happens.</span></li></ol>
+  </section>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const STATE_LABEL = { done: "Done", active: "Working", todo: "Queued", failed: "Failed", waiting: "Needs you" };
+  const fmtTime = (ms) => {
+    if (!ms) return "";
+    const d = new Date(ms);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+  const fmtAgo = (ms) => {
+    const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 60) return s + " s ago";
+    const m = Math.round(s / 60);
+    if (m < 60) return m + " min ago";
+    return Math.round(m / 60) + " h ago";
+  };
+  let lastUpdate = 0;
+  let shots = [];
+  let selected = null;
+
+  function setTally() {
+    const live = lastUpdate && Date.now() - lastUpdate < 15 * 60 * 1000;
+    $("tally").classList.toggle("live", !!live);
+    $("tally-text").textContent = live ? "Live" : (lastUpdate ? "Paused" : "Connecting");
+    $("updated").textContent = lastUpdate ? "Last update " + fmtAgo(lastUpdate) : "Waiting for the first update…";
+  }
+  setInterval(setTally, 15000);
+
+  function renderStatus(d) {
+    if (!d) return;
+    if (d.headline) $("headline").textContent = d.headline;
+    if (d.updatedAt) { lastUpdate = Math.max(lastUpdate, d.updatedAt); setTally(); }
+    const needs = $("needs");
+    needs.replaceChildren();
+    const items = Array.isArray(d.needs) ? d.needs : [];
+    if (!items.length) {
+      const p = document.createElement("p"); p.textContent = "Nothing right now."; needs.append(p);
+    } else {
+      const ol = document.createElement("ol");
+      for (const t of items) { const li = document.createElement("li"); li.textContent = String(t); ol.append(li); }
+      needs.append(ol);
+    }
+    if (d.note) { const p = document.createElement("p"); p.textContent = d.note; needs.append(p); }
+  }
+
+  function renderSteps(docs) {
+    const q = $("queue");
+    q.replaceChildren();
+    if (!docs.length) { const li = document.createElement("li"); li.className = "empty-note"; li.textContent = "No build steps yet."; q.append(li); return; }
+    let done = 0;
+    for (const s of docs) {
+      const li = document.createElement("li");
+      const state = STATE_LABEL[s.state] ? s.state : "todo";
+      if (state === "done") done++;
+      li.dataset.state = state;
+      const ico = document.createElement("span"); ico.className = "ico"; ico.setAttribute("aria-hidden", "true");
+      const t = document.createElement("span"); t.className = "t"; t.textContent = s.title || "";
+      const st = document.createElement("span"); st.className = "s"; st.textContent = STATE_LABEL[state];
+      li.append(ico, t, st);
+      if (s.detail) { const d = document.createElement("span"); d.className = "d"; d.textContent = s.detail; li.append(d); }
+      q.append(li);
+      if (s.updatedAt) lastUpdate = Math.max(lastUpdate, s.updatedAt);
+    }
+    $("q-sum").textContent = done + " of " + docs.length + " done";
+    setTally();
+  }
+
+  function renderLog(d) {
+    const ol = $("log");
+    const entries = d && Array.isArray(d.entries) ? d.entries.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)) : [];
+    if (!entries.length) return;
+    ol.replaceChildren();
+    for (const e of entries.slice(0, 80)) {
+      const li = document.createElement("li");
+      if (e.kind) li.dataset.kind = e.kind;
+      const tm = document.createElement("time"); tm.textContent = fmtTime(e.ts);
+      const sp = document.createElement("span"); sp.textContent = e.text || "";
+      li.append(tm, sp);
+      ol.append(li);
+      if (e.ts) lastUpdate = Math.max(lastUpdate, e.ts);
+    }
+    setTally();
+  }
+
+  function showShot(s) {
+    selected = s ? s.id : null;
+    const scr = $("screen");
+    scr.replaceChildren();
+    if (!s) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = "Screenshots of the real interface appear here as each part is tested.";
+      scr.append(e); $("shot-title").textContent = "No screenshots yet"; $("shot-time").textContent = "";
+      $("shot-caption").hidden = true; return;
+    }
+    const img = document.createElement("img"); img.src = s.url; img.alt = s.title || "Screenshot";
+    scr.append(img);
+    $("shot-title").textContent = s.title || "Screenshot";
+    $("shot-time").textContent = fmtTime(s.ts);
+    $("shot-caption").textContent = s.caption || ""; $("shot-caption").hidden = !s.caption;
+    for (const b of $("strip").children) b.setAttribute("aria-current", b.dataset.id === s.id ? "true" : "false");
+  }
+
+  function renderShots(list) {
+    shots = list.filter((s) => typeof s.url === "string" && s.url);
+    $("shot-count").textContent = shots.length ? shots.length + (shots.length === 1 ? " shot" : " shots") : "";
+    const strip = $("strip");
+    strip.replaceChildren();
+    for (const s of shots) {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.id = s.id;
+      const img = document.createElement("img"); img.src = s.url; img.alt = ""; img.loading = "lazy";
+      const sp = document.createElement("span"); sp.textContent = s.title || "";
+      b.append(img, sp);
+      b.addEventListener("click", () => showShot(s));
+      strip.append(b);
+      if (s.ts) lastUpdate = Math.max(lastUpdate, s.ts);
+    }
+    const keep = shots.find((s) => s.id === selected);
+    showShot(keep || shots[shots.length - 1] || null);
+    setTally();
+  }
+
+  async function start() {
+    const db = await window.claude?.use?.("db");
+    if (!db) { $("headline").textContent = "Open this page in Claude while signed in to see live updates."; $("tally-text").textContent = "Offline"; return; }
+    const onErr = () => { $("tally-text").textContent = "Reconnecting"; };
+    db.doc("board/status").onSnapshot((s) => renderStatus(s.exists ? s.data() : null), onErr);
+    db.collection("steps").orderBy("order").onSnapshot((q) => renderSteps(q.docs.map((d) => d.data())), onErr);
+    db.doc("board/log").onSnapshot((s) => renderLog(s.exists ? s.data() : null), onErr);
+    db.collection("shots").orderBy("order").onSnapshot((q) => renderShots(q.docs.map((d) => ({ id: d.id, ...d.data() }))), onErr);
+  }
+  start();
+})();
+</script>
