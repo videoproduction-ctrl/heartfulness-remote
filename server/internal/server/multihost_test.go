@@ -539,6 +539,10 @@ func TestTrustSyncPerMac(t *testing.T) {
 	if se := phoneDev.expect("session-end"); se["sessionId"] != sidA || se["reason"] != "revoked" {
 		t.Fatalf("session-end on A revocation: %v", se)
 	}
+	if se := hA.expect("session-end"); se["sessionId"] != sidA {
+		t.Fatalf("A session-end on revocation: %v", se)
+	}
+	hB.expectNone(50 * time.Millisecond)
 	waitFor(t, func() bool { return e.status(phoneDev.pubB64(), hA.pubB64) == store.StatusRevoked })
 	if e.status(phoneDev.pubB64(), hB.pubB64) != store.StatusApproved {
 		t.Fatal("revocation by A changed B")

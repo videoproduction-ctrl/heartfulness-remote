@@ -133,7 +133,7 @@ export function addMacView(app: App, frag: JoinFragment | null): View {
     showWorking("Looking for your Mac…");
     try {
       const d = deps();
-      const found = await findPendingMac(d.api, id);
+      const found = await findPendingMac(d, id);
       if (ac.signal.aborted) return;
       setStatus(`Adding “${found.name || "your Mac"}”…`, true);
       prepared = await beginJoin(d, found.hostPub, t);

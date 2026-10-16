@@ -298,10 +298,11 @@ export class Api {
 
   // ------------------------------------------------------------ multiple Macs (§10.2)
 
-  /** Typed path: finds a Mac waiting to be added by its 9-digit Mac ID. */
-  async hostsPending(macId: string): Promise<PendingHost> {
+  /** Typed path: finds a Mac waiting to be added by its 9-digit Mac ID (device proof in the query, it's a GET). */
+  async hostsPending(proof: DeviceProof, macId: string): Promise<PendingHost> {
     if (!/^\d{9}$/.test(macId)) throw new Error("A Mac ID has 9 digits.");
-    const r = await this.call<Record<string, unknown> | null>(`/api/hosts/pending?macId=${encodeURIComponent(macId)}`, undefined, "GET");
+    const q = new URLSearchParams({ macId, devicePub: proof.devicePub, nonce: proof.nonce, sig: proof.sig });
+    const r = await this.call<Record<string, unknown> | null>(`/api/hosts/pending?${q.toString()}`, undefined, "GET");
     if (!r || !isKey(r["hostPub"])) throw new ApiError(502, "bad-response", "The server sent an unexpected answer. Please try again.");
     return { hostPub: r["hostPub"], name: text(r["name"]) };
   }

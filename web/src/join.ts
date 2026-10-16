@@ -20,11 +20,11 @@ export interface JoinDeps {
   devicePub: Bytes;
   /** This device's name and kind exactly as the server registered them. */
   device(): Promise<{ name: string; kind: string }>;
-  /** Resolves with the `host-joined` message for that Mac. */
+  /** Resolves with the `host-joined` message for that Mac (or an `error` with for:"join"). */
   hostJoined(hostPub: string, timeoutMs: number, abort?: AbortSignal): Promise<Record<string, unknown>>;
 }
 
-export type JoinErrorCode = "not-found" | "mac-id-mismatch" | "bad-code" | "expired" | "timeout";
+export type JoinErrorCode = "not-found" | "mac-id-mismatch" | "bad-code" | "expired" | "timeout" | "rejected";
 
 export class JoinError extends Error {
   constructor(
@@ -49,15 +49,12 @@ export interface PreparedJoin extends FoundMac {
 }
 
 /** Typed path: looks up the waiting Mac and checks that its key really has the typed Mac ID. */
-export async function findPendingMac(api: JoinDeps["api"], typedMacId: string): Promise<FoundMac> {
+export async function findPendingMac(deps: Pick<JoinDeps, "api" | "proof">, typedMacId: string): Promise<FoundMac> {
   let p: { hostPub: string; name: string };
   try {
-    p = await api.hostsPending(typedMacId);
+    p = await deps.api.hostsPending(await deps.proof(), typedMacId);
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 404 || e.status === 410)) {
-      throw new JoinError("not-found", "No Mac with this Mac ID is waiting to be added. On the new Mac, open Heartfulness Remote and check the Mac ID it shows.");
-    }
-    throw e;
+    throw joinApiError(e);
   }
   const hostPub = unb64Len(p.hostPub, PUB_SIZE);
   const id = await macId(hostPub);
@@ -67,13 +64,31 @@ export async function findPendingMac(api: JoinDeps["api"], typedMacId: string): 
   return { hostPub, macId: id, name: p.name };
 }
 
-function beginError(e: unknown): unknown {
+/** Plain-language errors for the hosts endpoints (server/internal/server/hosts.go codes). */
+export function joinApiError(e: unknown): unknown {
   if (!(e instanceof ApiError)) return e;
+  switch (e.code) {
+    case "not-found":
+    case "host-not-connected":
+      return new JoinError("not-found", "No Mac with this Mac ID is waiting to be added. On the new Mac, open Heartfulness Remote and check that it shows a Mac ID and a code.");
+    case "ambiguous":
+      return new JoinError("not-found", "More than one Mac matches this Mac ID. Scan the new Mac's QR code with your phone instead.");
+    case "bad-claim":
+      return new JoinError("bad-code", "The code doesn't match this Mac. Check the code on the Mac's screen and try again.");
+    case "already-joined":
+      return new JoinError("rejected", "This Mac is already in your account.");
+    case "too-many-hosts":
+      return new JoinError("rejected", "Your account already has the maximum of 20 Macs. Remove one you no longer use, then try again.");
+    case "device-not-approved":
+      return new JoinError("rejected", "This device must be approved on one of your Macs before it can add another Mac.");
+    case "unknown-flow":
+      return new JoinError("expired", "That took too long. Please try again.");
+    default:
+      break;
+  }
   if (e.status === 404) return new JoinError("not-found", "This Mac isn't waiting to be added any more. On the Mac, open Heartfulness Remote to show a new code.");
   if (e.status === 410) return new JoinError("expired", "The code has expired. On the Mac, open Heartfulness Remote to show a new code.");
-  if (e.status === 400 || e.status === 403 || e.status === 409) {
-    return new JoinError("bad-code", "The code doesn't match this Mac. Check the code on the Mac's screen and try again.");
-  }
+  if (e.status === 400 || e.status === 409) return new JoinError("bad-code", "The code doesn't match this Mac. Check the code on the Mac's screen and try again.");
   return e;
 }
 
@@ -86,7 +101,7 @@ export async function beginJoin(deps: JoinDeps, hostPub: Bytes, t: Uint8Array): 
     return { hostPub, macId: await macId(hostPub), name: flow.name, flowId: flow.flowId, ka };
   } catch (e) {
     ka.fill(0);
-    throw beginError(e);
+    throw joinApiError(e);
   } finally {
     kc.fill(0);
   }
@@ -118,7 +133,7 @@ export async function finishJoin(deps: JoinDeps, p: PreparedJoin, abort?: AbortS
   try {
     res = await deps.api.joinFinish(proof, p.flowId, b64(mac));
   } catch (e) {
-    throw beginError(e);
+    throw joinApiError(e);
   }
   let msg: Record<string, unknown>;
   if (res["cert"] !== undefined && res["hostMac"] !== undefined) {
@@ -132,6 +147,10 @@ export async function finishJoin(deps: JoinDeps, p: PreparedJoin, abort?: AbortS
       }
       throw e;
     }
+  }
+  if (msg["type"] === "error") {
+    const code = typeof msg["code"] === "string" ? msg["code"] : "";
+    throw joinApiError(new ApiError(409, code, `The Mac couldn't be added (${/^[\w-]{1,40}$/.test(code) ? code : "error"}). Please try again.`));
   }
   return verifyHostJoined(msg, p.hostPub, deps.devicePub, p.ka);
 }

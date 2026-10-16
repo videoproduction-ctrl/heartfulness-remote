@@ -518,11 +518,20 @@ export class App {
     }
   }
 
-  /** Resolves with `host-joined` for that Mac (§10.2 step 5), or rejects on timeout/abort. */
+  /**
+   * Resolves with `host-joined` for that Mac (§10.2 step 5) — or with the
+   * server's `error {for:"join", hostPub}` — and rejects on timeout/abort.
+   */
   waitHostJoined(hostPub: string, timeoutMs: number, abort?: AbortSignal): Promise<Msg> {
     const sig = this.signal;
     if (!sig) return Promise.reject(new Error("Not connected to the server."));
-    return waitFor(sig, ["host-joined"], (m) => m["hostPub"] === hostPub, timeoutMs, abort);
+    return waitFor(
+      sig,
+      ["host-joined", "error"],
+      (m) => m["hostPub"] === hostPub && (m.type === "host-joined" || m["for"] === "join"),
+      timeoutMs,
+      abort,
+    );
   }
 
   // ------------------------------------------------------------ approvals inbox
@@ -657,7 +666,14 @@ export class App {
   /** Unbinds a Mac from the account (POST /api/hosts/remove) and forgets its key here. */
   async removeMac(pub: string): Promise<void> {
     const proof = await this.deviceProof();
-    await this.api.hostsRemove(proof, pub);
+    try {
+      await this.api.hostsRemove(proof, pub);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "last-host") throw new Error("This is the only Mac in your account, so it can't be removed.");
+      if (e instanceof ApiError && e.code === "not-found") {
+        /* already gone: just tidy up here */
+      } else throw e;
+    }
     await this.unpinMac(pub);
     this.macs = this.macs.filter((m) => m.pub !== pub);
     for (const [k, a] of this.approvals) if (a.hostPub === pub) this.approvals.delete(k);
