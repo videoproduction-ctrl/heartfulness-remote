@@ -2,7 +2,7 @@
 // the Mac app, using the real Go agent core), and gives each browser context a
 // CDP virtual WebAuthn authenticator so passkeys are created and used for real.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { BrowserContext, Page, CDPSession } from "@playwright/test";
@@ -16,6 +16,8 @@ export interface Stack {
   server: ChildProcess;
   host: ChildProcess;
   hostState(): any;
+  /** All server + host process output so far. */
+  logs(): string;
   hostCmd(line: string): void;
   inputLog(): any[];
   downloadsDir: string;
@@ -69,8 +71,10 @@ export async function startStack(port: number, opts: { hostArgs?: string[] } = {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  server.stdout!.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[server] ${d}`));
-  server.stderr!.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[server] ${d}`));
+  // Everything the processes print is kept, so tests can prove no secret is ever logged.
+  const serverLog = join(dir, "server.log");
+  server.stdout!.on("data", (d) => { appendFileSync(serverLog, d); if (process.env.E2E_VERBOSE) process.stdout.write(`[server] ${d}`); });
+  server.stderr!.on("data", (d) => { appendFileSync(serverLog, d); if (process.env.E2E_VERBOSE) process.stderr.write(`[server] ${d}`); });
   let up = false;
   for (let i = 0; i < 150 && !(up = await httpOK(`${origin}/healthz`)); i++) {
     await new Promise((r) => setTimeout(r, 100));
@@ -98,8 +102,9 @@ export async function startStack(port: number, opts: { hostArgs?: string[] } = {
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
-  host.stdout!.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[host] ${d}`));
-  host.stderr!.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[host] ${d}`));
+  const hostLog = join(dir, "host.log");
+  host.stdout!.on("data", (d) => { appendFileSync(hostLog, d); if (process.env.E2E_VERBOSE) process.stdout.write(`[host] ${d}`); });
+  host.stderr!.on("data", (d) => { appendFileSync(hostLog, d); if (process.env.E2E_VERBOSE) process.stderr.write(`[host] ${d}`); });
 
   const hostState = () => (existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, "utf8")) : {});
   const inputLog = () =>
@@ -111,6 +116,7 @@ export async function startStack(port: number, opts: { hostArgs?: string[] } = {
 
   return {
     origin, dir, server, host, hostState, inputLog, downloadsDir, homeDir,
+    logs: () => [serverLog, hostLog].map((f) => (existsSync(f) ? readFileSync(f, "utf8") : "")).join("\n"),
     hostCmd: (line: string) => host.stdin!.write(line + "\n"),
     async stop() {
       host.stdin!.write("quit\n");

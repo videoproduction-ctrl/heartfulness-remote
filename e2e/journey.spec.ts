@@ -17,6 +17,7 @@ const devs: Record<string, Dev> = {};
 // credential (with its latest signature counter) to the next device ourselves.
 // The server rightly rejects counters that go backwards (cloned authenticator).
 let lastPasskeyUser: Dev["auth"] | undefined;
+let setupSecret = "";
 
 async function newDevice(browser: Browser, name: string, viewport = { width: 1280, height: 800 }): Promise<Dev> {
   // reducedMotion: sheets appear instantly, so clicks never race a slide-in animation.
@@ -83,6 +84,7 @@ test("1. phone scans the Mac's setup code, creates a passkey and is trusted auto
   expect(st.claimed).toBe(false);
   expect(st.setupURL).toContain("#setup=");
   const phone = await newDevice(browser, "phone", { width: 390, height: 844 });
+  setupSecret = st.setupURL.split("#setup=")[1].split(".")[0];
   await phone.page.goto(st.setupURL);
   // The one-time secret must be stripped from the address bar immediately.
   await expect.poll(() => phone.page.url()).not.toContain("#setup=");
@@ -228,4 +230,24 @@ test("9. the Mac's tamper-evident access log recorded the sessions", async () =>
   expect(kinds.join(" ")).toMatch(/device-(added|approved)|pair/);
   // Every entry is hash-chained.
   expect(log.slice(1).every((e) => typeof e.prev === "string" && e.prev.length > 0)).toBe(true);
+});
+
+test("10. no secret ever appears in the server's or the Mac agent's logs", async () => {
+  const logs = stack.logs();
+  expect(logs.length).toBeGreaterThan(100);
+  // The one-time setup secret T (it was only in the QR link).
+  expect(setupSecret.length).toBeGreaterThan(20);
+  expect(logs).not.toContain(setupSecret);
+  // Every live session cookie / bearer token of every device.
+  let checked = 0;
+  for (const [name, d] of Object.entries(devs)) {
+    for (const c of await d.ctx.cookies()) {
+      checked++;
+      expect(c.value.length, `${name} cookie`).toBeGreaterThan(20);
+      expect(logs, `${name}'s session cookie must not be logged`).not.toContain(c.value);
+    }
+  }
+  expect(checked, "session cookies inspected").toBeGreaterThanOrEqual(3);
+  // No private key material or WebAuthn assertion blobs.
+  expect(logs).not.toMatch(/PRIVATE KEY|authenticatorData|clientDataJSON|"sig":"/);
 });
