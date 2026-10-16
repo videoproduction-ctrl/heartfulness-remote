@@ -205,3 +205,77 @@ func FreshTimestamp(ts int64, now time.Time) bool {
 	}
 	return d <= MaxClockSkew
 }
+
+// Multi-Mac (PROTOCOL.md §10).
+const (
+	LabelMacID       = "HR1/mac-id"
+	LabelJoinConfirm = "HR1/join-confirm"
+	// JoinSecretSize is the size of T for joining an additional Mac (80 bits).
+	JoinSecretSize = 10
+)
+
+// MacID returns the 9-digit display ID of a host key (no spaces).
+func MacID(hostPub []byte) string {
+	h := Hash(TBS(LabelMacID, hostPub))
+	return fmt.Sprintf("%09d", binary.BigEndian.Uint32(h[:4])%1_000_000_000)
+}
+
+// FormatMacID renders "482913557" as "482 913 557".
+func FormatMacID(s string) string {
+	if len(s) != 9 {
+		return s
+	}
+	return s[:3] + " " + s[3:6] + " " + s[6:]
+}
+
+// HostConfirmMAC = HMAC-SHA256(Ka, TBS("HR1/join-confirm", hostPub, devicePub)).
+func HostConfirmMAC(ka, hostPub, devicePub []byte) []byte {
+	m := hmac.New(sha256.New, ka)
+	m.Write(TBS(LabelJoinConfirm, hostPub, devicePub))
+	return m.Sum(nil)
+}
+
+// CheckHostConfirmMAC verifies a host confirmation MAC in constant time.
+func CheckHostConfirmMAC(ka, hostPub, devicePub, mac []byte) bool {
+	return hmac.Equal(HostConfirmMAC(ka, hostPub, devicePub), mac)
+}
+
+var joinB32 = base32.StdEncoding.WithPadding(base32.NoPadding)
+
+// JoinCode renders a 10-byte join secret as "K7QP-3MZD-WX2R-9TFA".
+func JoinCode(t []byte) string {
+	s := joinB32.EncodeToString(t)
+	var parts []string
+	for i := 0; i < len(s); i += 4 {
+		parts = append(parts, s[i:min(i+4, len(s))])
+	}
+	return strings.Join(parts, "-")
+}
+
+// ParseJoinCode normalises a typed join code (case, spaces, dashes, 0→O,
+// 1→I, 8→B) and decodes it to the 10-byte join secret.
+func ParseJoinCode(code string) ([]byte, error) {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(code) {
+		switch {
+		case r == ' ' || r == '-' || r == '\t':
+			continue
+		case r == '0':
+			b.WriteRune('O')
+		case r == '1':
+			b.WriteRune('I')
+		case r == '8':
+			b.WriteRune('B')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	t, err := joinB32.DecodeString(b.String())
+	if err != nil {
+		return nil, err
+	}
+	if len(t) != JoinSecretSize {
+		return nil, fmt.Errorf("join code must encode %d bytes", JoinSecretSize)
+	}
+	return t, nil
+}

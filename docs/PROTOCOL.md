@@ -379,3 +379,87 @@ re-ordering are detected.
   `connect-timeout`, `offer-timeout`, `connection-failed`, `connection-closed`,
   `trust-reset`, `browser-disabled`, `idle-timeout`, `killed`, `revoked`, `user`.
 * `/ws/client` `ready.device` also carries `cert` when approved.
+
+## 10. Multiple Macs (HR1.1) — normative, supersedes the single-host parts of §4–§7
+
+One owner account can hold **up to 20 Macs** ("hosts"). Each Mac remains its
+own root of trust: a device must be approved **on each Mac** it wants to
+control (§5, unchanged crypto, now routed by `hostPub`).
+
+### 10.1 Mac ID
+
+`macId = u32be(H(TBS("HR1/mac-id", hostPub))[0:4]) mod 10^9`, zero-padded to 9
+digits, displayed `482 913 557`. It is a **display/lookup** convenience only —
+never trusted for authentication. Clients compute it themselves from the
+pinned `hostPub`.
+
+### 10.2 Adding another Mac ("join")
+
+A Mac that connects to a **claimed** server with a host key the server does not
+know becomes a *pending join host* (kept while connected, max 5, 30 min). The
+server answers `host-ready {claimed:true, joined:false, …}`.
+
+1. The Mac generates a join secret `T` of **10 random bytes** (80 bits, memory
+   only), derives `Kc`, `Ka` exactly as in §3 (HKDF of `T`), sends
+   `claimCommit = H(Kc)` in `host-auth`, and shows:
+   * QR: `https://<domain>/#join=<b64 T>.<b64 hostPub>`
+   * typed form: **Mac ID** + **join code** = RFC 4648 base32 of `T`
+     (16 chars, shown `K7QP-3MZD-WX2R-9TFA`). Clients normalise input:
+     uppercase, drop spaces/dashes, map `0→O`, `1→I`, `8→B`.
+2. An **approved device** of the owner (any device approved on at least one
+   Mac), signed in with a passkey:
+   * typed path only: `GET /api/hosts/pending?macId=…` → `{hostPub, name}`;
+     the client checks `macId(hostPub)` equals what was typed;
+   * `POST /api/hosts/join/begin {hostPub, claim:b64 Kc, …device proof}` →
+     server checks `H(Kc)` against that pending host's commit → `{flowId, name, macId}`;
+   * `POST /api/hosts/join/finish {flowId, setupMac, …device proof}` where
+     `setupMac = HMAC(Ka, TBS("HR1/setup", hostPub, devicePub, name, kind))`
+     (name/kind = this device's registered name/kind).
+3. Server → that host: `setup-device {devicePub, name, kind, setupMac}` (same as §4).
+4. Host verifies `setupMac` with `Ka`, pins the device, issues a cert and
+   answers `device-approved {cert, hostMac}` with
+   `hostMac = HMAC-SHA256(Ka, TBS("HR1/join-confirm", hostPub, devicePub))`,
+   then forgets `T`. (§4 claims also send `hostMac` now.)
+5. Server verifies the cert against that host key, **binds the host to the
+   owner** (only now), and sends the device
+   `host-joined {hostPub, cert, hostMac}` + broadcasts `hosts-changed`.
+6. The device verifies the cert **and** `hostMac` (with its `Ka`) before
+   pinning `hostPub`. `hostMac` proves the key belongs to the Mac that showed
+   the code; the server, which never learns `T` or `Ka`, cannot forge it
+   (80-bit secret, single use, short-lived).
+
+`POST /api/hosts/remove {hostPub, …device proof}` unbinds a Mac (its socket is
+closed with `error {code:"removed"}`; the Mac shows a new join code).
+`HR_HOST_PUBKEY` (optional) becomes a comma-separated allow-list.
+
+### 10.3 Routing
+
+Client→server messages that target a Mac carry `hostPub`: `pair-start`,
+`pair-approve`, `pair-deny`, `session-request`, `revoke-request`,
+`kill-request`. Server→client messages that come from a Mac carry its
+`hostPub`: `pair-challenge`, `pair-approved`, `pair-denied`,
+`approval-needed`, `approval-closed`, `session-accept`, `session-reject`,
+`answer`, `ice`, `session-end`, `host-status`, `host-joined`. `offer`, `ice`
+and `session-end` from the client carry `sessionId` (the server maps it to
+the Mac) and also `hostPub`.
+
+`approval-needed` is sent only to devices approved **on that Mac**; a
+`pair-approve` is verified by that Mac against its own pins. `trust-sync`,
+certs and revocations from a Mac only change device approvals **for that
+Mac**.
+
+### 10.4 Changed shapes
+
+```
+/ws/client  S→C {type:"ready", device:{pub},
+                 hosts:[{pub, macId, name, online, state, sessionDeviceName,
+                         deviceStatus:"unknown"|"pending"|"approved"|"revoked", cert?}]}
+            S→C {type:"host-status", hostPub, online, state, sessionDeviceName}
+            S→C {type:"hosts-changed"}
+/ws/host    S→H {type:"host-ready", claimed, joined, origin, macId, iceServers}
+GET /api/me → {hosts:[{pub, macId, name, online, state, sessionDeviceName, claimedAt, lastSeen}],
+               devices:[{pub, name, kind, createdAt, lastSeen,
+                         approvals:[{hostPub, status}]}],
+               passkeys:[…]}
+IPC STATE   adds macId, joined, joinURL?, joinCode?   (setupURL unchanged: unclaimed server only)
+```

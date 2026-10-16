@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -147,5 +148,36 @@ func TestVectorsUpToDate(t *testing.T) {
 	}
 	if err := onDisk.Cert.Verify(hp); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMultiMac(t *testing.T) {
+	pub := make([]byte, 32)
+	id := MacID(pub)
+	if len(id) != 9 || FormatMacID(id)[3] != ' ' {
+		t.Fatal(id)
+	}
+	if MacID(append([]byte{1}, pub[1:]...)) == id {
+		t.Fatal("mac id not key-dependent")
+	}
+	jt := []byte{0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9}
+	code := JoinCode(jt)
+	if len(code) != 19 || code[4] != '-' {
+		t.Fatal(code)
+	}
+	for _, typed := range []string{code, strings.ToLower(code), strings.ReplaceAll(code, "-", " ")} {
+		got, err := ParseJoinCode(typed)
+		if err != nil || !bytes.Equal(got, jt) {
+			t.Fatalf("%q: %v", typed, err)
+		}
+	}
+	if _, err := ParseJoinCode("ABCD"); err == nil {
+		t.Fatal("short code accepted")
+	}
+	_, ka, _ := SetupKeys(jt)
+	dp := bytes.Repeat([]byte{7}, 32)
+	m := HostConfirmMAC(ka, pub, dp)
+	if !CheckHostConfirmMAC(ka, pub, dp, m) || CheckHostConfirmMAC(ka, dp, pub, m) {
+		t.Fatal("host confirm mac")
 	}
 }

@@ -124,6 +124,16 @@
     "issuedAt": 1760000000,
     "sig": "X_ytfJ6BRESPfnnLk426UfSvsM6boKe-iV2BdhLAYp5h39Ax1YBgBImXqKUYIBzX3hPK4Vlo7_si1x3ZniUkBw"
   },
+  "join": {
+    "macId": "967244390",
+    "t": "4OHi4-Tl5ufo6Q",
+    "code": "4DQ6-FY7E-4XTO-P2HJ",
+    "kc": "brD5DaA90FCON-5mk02Wh4CC2zY4gofQ9jeHYl9nwgA",
+    "ka": "NbtdTq71NWjRWaGN_NPAagUuRf4qzVjqOLIoyDNcioc",
+    "claimCommit": "NS3PFTCuR11ZjLxxognrpKqYwZloS-Cd6oIaKsNY4cQ",
+    "setupMac": "mdfE9nJmKnWbzESM4nI_6guXCeAngSyA6MYEIZheMMc",
+    "hostMac": "YXjssmbla5ZTLhmQprnmuivmdad0oYcUijmj7SoXy7U"
+  },
   "inputs": {
     "answerSdp": "v=0\r\no=- 3 4 IN IP4 127.0.0.1\r\na=fingerprint:sha-256 CC:DD\r\n",
     "clientNonce": "MDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk8",

@@ -18,6 +18,7 @@ type VectorSet struct {
 	SAS         string            `json:"sas"`
 	Setup       SetupVector       `json:"setup"`
 	Cert        Cert              `json:"cert"`
+	Join        JoinVector        `json:"join"`
 	Inputs      map[string]string `json:"inputs"`
 }
 
@@ -28,6 +29,18 @@ type TBSVector struct {
 	TBSHex string   `json:"tbsHex"`
 	Signer string   `json:"signer"`
 	Sig    string   `json:"sig"`
+}
+
+// JoinVector covers adding another Mac (PROTOCOL.md §10).
+type JoinVector struct {
+	MacID       string `json:"macId"`
+	T           string `json:"t"`
+	Code        string `json:"code"`
+	Kc          string `json:"kc"`
+	Ka          string `json:"ka"`
+	ClaimCommit string `json:"claimCommit"`
+	SetupMAC    string `json:"setupMac"`
+	HostMAC     string `json:"hostMac"`
 }
 
 // SetupVector covers the bootstrap derivations.
@@ -107,6 +120,11 @@ func Vectors() VectorSet {
 	if err != nil {
 		panic(err)
 	}
+	jt := seq(0xe0, JoinSecretSize)
+	jkc, jka, err := SetupKeys(jt)
+	if err != nil {
+		panic(err)
+	}
 	cert := SignCert(host, Cert{HostPub: B64(hostPub), DevicePub: B64(devPub), Name: "Phone ✓", Kind: "browser", IssuedAt: 1760000000})
 
 	return VectorSet{
@@ -125,6 +143,12 @@ func Vectors() VectorSet {
 			SetupMAC: B64(SetupMAC(ka, hostPub, devPub, "Phone ✓", "browser")),
 		},
 		Cert: cert,
+		Join: JoinVector{
+			MacID: MacID(hostPub), T: B64(jt), Code: JoinCode(jt), Kc: B64(jkc), Ka: B64(jka),
+			ClaimCommit: B64(ClaimCommit(jkc)),
+			SetupMAC:    B64(SetupMAC(jka, hostPub, devPub, "Phone ✓", "browser")),
+			HostMAC:     B64(HostConfirmMAC(jka, hostPub, devPub)),
+		},
 		Inputs: map[string]string{
 			"nd": B64(nd), "na": B64(na), "requestId": B64(reqID), "sessionId": B64(sessID),
 			"clientNonce": B64(cn), "hostNonce": B64(hn), "nonce": B64(nonce), "origin": origin,
