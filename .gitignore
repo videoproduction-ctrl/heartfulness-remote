@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.p8
+*.mobileprovision
+secrets/
+deploy/.env
+
+# Build output
+dist/
+build/
+.build/
+node_modules/
+web/dist/
+target/
+*.app
+*.dmg
+*.msi
+*.exe
+!scripts/*.exe.md
+DerivedData/
+.swiftpm/
+coverage/
+test-results/
+playwright-report/
+*.test
+/agent/hr-agent
+/server/heartfulness-server
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
