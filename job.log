@@ -1,0 +1,10 @@
+Per-job reports: git show origin/ci-results/<name>:job.log
+
+go                       success
+web                      success
+e2e                      success
+docker                   success
+mac-host                 success
+tauri-macos-15           success
+tauri-windows-latest     success
+security                 success
