@@ -1,0 +1,19 @@
+a48555665537d0b96a55c8ab4becdaadb8da199c815ad6c176016959c497c8c0  Heartfulness-Remote-Mac.zip
+ca7391f85dd94c01be60c9fbbfe86ff6d9df307465e103894bd7a5243f10fdad  Heartfulness-Remote-Client-Mac.dmg
+5e74a0821a157507a13c6ad9c6ae5adf07aa1f312cd331af74c4f5336e8d3756  Heartfulness-Remote-Client-Windows.msi
+25a8d7704e1d0a4e2848892b00629099a3b450d77d110520137be6310e14cb33  Heartfulness-Remote-Client-Windows-Setup.exe
+total 23976
+drwxr-xr-x 2 runner runner     4096 Oct 16 12:27 .
+drwxr-xr-x 5 runner runner     4096 Oct 16 12:27 ..
+-rw-r--r-- 1 runner runner  4694592 Oct 16 12:27 Heartfulness-Remote-Client-Mac.dmg
+-rw-r--r-- 1 runner runner  3736899 Oct 16 12:27 Heartfulness-Remote-Client-Windows-Setup.exe
+-rw-r--r-- 1 runner runner  4767744 Oct 16 12:27 Heartfulness-Remote-Client-Windows.msi
+-rw-r--r-- 1 runner runner 11332719 Oct 16 12:27 Heartfulness-Remote-Mac.zip
+-rw-r--r-- 1 runner runner      411 Oct 16 12:27 SHA256SUMS.txt
+https://github.com/videoproduction-ctrl/heartfulness-remote/releases/tag/v0.2.0
+https://github.com/videoproduction-ctrl/heartfulness-remote/releases/tag/v0.2.0
+  Heartfulness-Remote-Client-Mac.dmg  4694592 bytes
+  Heartfulness-Remote-Client-Windows-Setup.exe  3736899 bytes
+  Heartfulness-Remote-Client-Windows.msi  4767744 bytes
+  Heartfulness-Remote-Mac.zip  11332719 bytes
+  SHA256SUMS.txt  411 bytes
