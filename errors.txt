@@ -1,0 +1,43 @@
+15-✔ hex, base32, utf8 and concat helpers (0.817219ms)
+16-(node:2535) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+17-(Use `node --trace-warnings ...` to show where the warning was created)
+18-✔ every session end reason the Go agent/server sends has a specific message (1.397464ms)
+19:✔ pairing denial / error codes map to plain language (0.323756ms)
+20-✔ file reasons from agent/internal/core/datachannels.go (0.451385ms)
+21:✔ a download that fails before starting (file-error with only reqId) is reported (5.025722ms)
+22-✔ Tauri platform uses exactly the shell's commands, bearer auth and the canonical origin (44.059767ms)
+23-✔ production build is CSP-clean (fresh build) (224.879873ms)
+24-﹣ web/dist (if built) is CSP-clean (0.358311ms) # dist/ not built yet (run npm run build)
+25-✔ SHA-256 (WebCrypto) known vectors, base64url (14.470491ms)
+26-✔ frames are 16-byte id ‖ chunk with chunks ≤ 16 KiB (25.137226ms)
+27-✔ assembler reassembles and verifies SHA-256 (3.604332ms)
+28-✔ assembler rejects corruption, truncation and overflow (3.190439ms)
+29-✔ sendFrames respects bufferedAmount backpressure and reports progress (16.209906ms)
+30-✔ sendFrames stops on cancel and on a closed channel (0.98879ms)
+31-✔ path and file name helpers (0.599372ms)
+32-✔ TBS layout is unambiguous (matches Go TestTBSLayout) (2.943808ms)
+33-✔ every TBS vector encodes byte-identically (1.039685ms)
+34-✔ every vector signature verifies with the right key, and only that key (32.896382ms)
+35-✔ deterministic Ed25519 signing reproduces the vector signatures (4.662051ms)
+36-✔ pair commit, SAS and fingerprint (2.098486ms)
+37-✔ setup keys, claim commit and setup MAC (3.919372ms)
+--
+92-✔ authentication credential to JSON (0.456905ms)
+93-ℹ tests 79
+94-ℹ suites 0
+95-ℹ pass 78
+96:ℹ fail 0
+97-ℹ cancelled 0
+98-ℹ skipped 1
+99-ℹ todo 0
+100-ℹ duration_ms 564.579125
+101-
+102-> heartfulness-remote-web@1.0.0 build
+103-> node build.mjs
+104-
+105-
+106-  dist/app.DW5G3PSK.js   147.7kb
+107-  dist/app.MT4FFVTG.css   21.0kb
+108-
+109-⚡ Done in 32ms
+110-no third-party resource references in web/dist

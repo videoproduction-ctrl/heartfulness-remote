@@ -1,0 +1,110 @@
+v22.23.3
+
+added 5 packages in 965ms
+
+> heartfulness-remote-web@1.0.0 typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit
+
+
+> heartfulness-remote-web@1.0.0 test
+> node scripts/run-tests.mjs
+
+✔ base64url known vectors (RFC 4648, url alphabet, no padding) (2.607709ms)
+✔ base64url roundtrip for random data of every length 0..300 (28.29671ms)
+✔ base64url rejects padding, std alphabet, bad length and non-canonical input (0.945288ms)
+✔ hex, base32, utf8 and concat helpers (0.817219ms)
+(node:2535) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ every session end reason the Go agent/server sends has a specific message (1.397464ms)
+✔ pairing denial / error codes map to plain language (0.323756ms)
+✔ file reasons from agent/internal/core/datachannels.go (0.451385ms)
+✔ a download that fails before starting (file-error with only reqId) is reported (5.025722ms)
+✔ Tauri platform uses exactly the shell's commands, bearer auth and the canonical origin (44.059767ms)
+✔ production build is CSP-clean (fresh build) (224.879873ms)
+﹣ web/dist (if built) is CSP-clean (0.358311ms) # dist/ not built yet (run npm run build)
+✔ SHA-256 (WebCrypto) known vectors, base64url (14.470491ms)
+✔ frames are 16-byte id ‖ chunk with chunks ≤ 16 KiB (25.137226ms)
+✔ assembler reassembles and verifies SHA-256 (3.604332ms)
+✔ assembler rejects corruption, truncation and overflow (3.190439ms)
+✔ sendFrames respects bufferedAmount backpressure and reports progress (16.209906ms)
+✔ sendFrames stops on cancel and on a closed channel (0.98879ms)
+✔ path and file name helpers (0.599372ms)
+✔ TBS layout is unambiguous (matches Go TestTBSLayout) (2.943808ms)
+✔ every TBS vector encodes byte-identically (1.039685ms)
+✔ every vector signature verifies with the right key, and only that key (32.896382ms)
+✔ deterministic Ed25519 signing reproduces the vector signatures (4.662051ms)
+✔ pair commit, SAS and fingerprint (2.098486ms)
+✔ setup keys, claim commit and setup MAC (3.919372ms)
+✔ cert verification (3.611456ms)
+✔ SDP fingerprint rule: exactly one distinct sha-256 fingerprint (0.64698ms)
+✔ offer signing reproduces the vector and covers H(offerSdp) (2.918821ms)
+✔ answer verification: pinned key, nonces, both SDP hashes, fingerprint rule (8.045051ms)
+✔ pair challenge, approval check and pair-approve signature (7.530087ms)
+✔ client-auth, revoke-request and kill-request signatures (4.179048ms)
+✔ timestamp freshness (±300 s) (0.293358ms)
+✔ Ctrl ⇄ ⌘ remapping (3.093166ms)
+✔ client shortcuts are Ctrl+Alt+Shift+key only (0.614379ms)
+✔ letterboxed video content rect (1.136807ms)
+✔ pointer coordinates map to 0..1 within the picture (0.740966ms)
+✔ wheel deltas are converted to CSS pixels (0.364131ms)
+✔ text is split into ≤ 4096-character messages without breaking characters (2.53394ms)
+✔ touch: tap = left click (0.753279ms)
+✔ touch: one-finger drag moves the pointer without clicking (0.361447ms)
+✔ touch: long-press then drag = drag with the left button held (0.698938ms)
+✔ touch: two-finger tap = right click at the centroid (0.74305ms)
+✔ touch: two-finger pan = scroll (content follows the fingers) (0.461744ms)
+✔ touch: three fingers cancel the gesture (0.338943ms)
+✔ touch: reset during a drag releases the button (0.234499ms)
+✔ setup fragment #setup=<T>.<hostPub> (2.513662ms)
+✔ server origin normalisation (Tauri first run) (1.416159ms)
+✔ link codes (0.366847ms)
+✔ default device names (1.242534ms)
+✔ latency colours: green < 40 ms, amber < 100 ms, red ≥ 100 ms (0.397023ms)
+✔ stats snapshot: selected pair, relay detection, rates (0.979303ms)
+✔ session reject reasons are explained (0.391562ms)
+✔ clipboard sync never loops and respects the 1 MiB limit (3.531487ms)
+✔ Mac ID matches the Go vector and formats as 3×3 digits (16.108806ms)
+✔ typed Mac IDs: spaces/dashes allowed, exactly 9 digits (0.55563ms)
+✔ join code: base32 of T in groups of 4 (Go JoinCode) (0.394839ms)
+✔ join code parsing normalises like Go ParseJoinCode (case, spaces, dashes, 0→O 1→I 8→B) (1.314319ms)
+✔ base32 decoding is strict (1.222577ms)
+✔ join keys, claim commit, setup MAC and hostMac match the Go vectors (10.413812ms)
+✔ join link fragment #join=<T>.<hostPub> (0.797312ms)
+✔ the old single pin is migrated transparently (and only once) (2.904173ms)
+✔ migration merges with existing pins; a malformed old pin is dropped (2.269456ms)
+✔ pin store: add / remove / clear, per origin, ignores tampered entries (5.397889ms)
+✔ pin updates are serialised through the lock (3.439217ms)
+✔ client→server messages that target a Mac carry its hostPub (3.4585ms)
+✔ revoke-request and kill-request are signed for exactly that Mac (3.663313ms)
+✔ aboutMac: a message naming another Mac never matches (0.229178ms)
+✔ ready: hosts with this device's status; older single-host shape still works (0.463467ms)
+✔ /api/me: hosts + per-Mac approvals; older {host, devices[].status} still works (0.698126ms)
+✔ aggregate device status and card status texts (0.240359ms)
+✔ hosts API: pending lookup, join begin/finish and remove send the §10.2 shapes (25.592609ms)
+✔ typed join: Mac ID checked locally, claim = Kc, setupMac with Ka, cert + hostMac verified (11.037068ms)
+✔ typed join: a server answering with another key (Mac ID mismatch) or 404 is refused (7.695184ms)
+✔ join: a forged or missing hostMac, or a cert for someone else, is never accepted (21.209239ms)
+✔ server refusals of a session request are explained (0.283029ms)
+✔ creation options from go-webauthn JSON (3.54404ms)
+✔ request options for a discoverable login (0.535462ms)
+✔ lenient base64 for WebAuthn fields (padding / std alphabet tolerated) (0.404417ms)
+✔ registration credential to JSON (1.029155ms)
+✔ authentication credential to JSON (0.456905ms)
+ℹ tests 79
+ℹ suites 0
+ℹ pass 78
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 564.579125
+
+> heartfulness-remote-web@1.0.0 build
+> node build.mjs
+
+
+  dist/app.DW5G3PSK.js   147.7kb
+  dist/app.MT4FFVTG.css   21.0kb
+
+⚡ Done in 32ms
+no third-party resource references in web/dist
