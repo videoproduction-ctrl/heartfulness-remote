@@ -1,0 +1,43 @@
+92-#16 sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 32B / 32B 0.1s done
+93-#16 extracting sha256:b2b6413ae8f393d11d32262c8dc6bd053dbaea3d074f95edd5605d3eb116e3c2 2.2s
+94-#16 ...
+95-
+96:#17 [web 4/7] RUN if [ ! -f package.json ]; then       echo "ERROR: web/package.json is missing. The web client must be in web/ (see docs/ARCHITECTURE.md) before the server image can be built." >&2; exit 1;     fi;     if [ ! -f package-lock.json ]; then       echo "ERROR: web/package-lock.json is missing. Run 'npm install' in web/ and commit the lockfile." >&2; exit 1;     fi;     rm -f go.mod
+97-#17 DONE 0.3s
+98-
+99-#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+100-#16 ...
+101-
+102-#18 [web 5/7] RUN --mount=type=secret,id=extra_ca,required=false     if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi;     npm ci --no-audit --no-fund --ignore-scripts
+103-#18 1.614 
+104-#18 1.614 added 5 packages in 1s
+105-#18 1.616 npm notice
+106-#18 1.616 npm notice New major version of npm available! 10.9.9 -> 12.2.0
+107-#18 1.616 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+108-#18 1.616 npm notice To update run: npm install -g npm@12.2.0
+109-#18 1.616 npm notice
+110-#18 DONE 1.8s
+111-
+112-#19 [web 6/7] COPY server/go.mod we[b] ./
+--
+114-
+115-#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+116-#16 ...
+117-
+118:#20 [web 7/7] RUN rm -rf go.mod dist && npm run build &&     if [ ! -f dist/index.html ]; then echo "ERROR: 'npm run build' did not produce web/dist/index.html" >&2; exit 1; fi
+119-#20 0.314 
+120-#20 0.314 > heartfulness-remote-web@1.0.0 build
+121-#20 0.314 > node build.mjs
+122-#20 0.314 
+123-#20 0.472 
+124-#20 0.472   dist/app.DW5G3PSK.js   147.7kb
+125-#20 0.472   dist/app.MT4FFVTG.css   21.0kb
+126-#20 0.472 
+127-#20 0.472 ⚡ Done in 41ms
+128-#20 DONE 0.5s
+129-
+130-#16 [build 1/9] FROM docker.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d
+131-#16 extracting sha256:b2b6413ae8f393d11d32262c8dc6bd053dbaea3d074f95edd5605d3eb116e3c2 5.7s done
+132-#16 extracting sha256:6ff05f868da7888e9c1d6b4967ff0892cf86b51d23c81149794e72c001604803
+133-#16 extracting sha256:6ff05f868da7888e9c1d6b4967ff0892cf86b51d23c81149794e72c001604803 done
+134-#16 extracting sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 done
