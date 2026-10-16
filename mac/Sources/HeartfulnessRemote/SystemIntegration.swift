@@ -106,6 +106,8 @@ enum FirewallControl {
 enum LoginItem {
     static var status: SMAppService.Status { SMAppService.mainApp.status }
     static var isEnabled: Bool { status == .enabled }
+    /// Registered, but the owner switched it off in System Settings → General → Login Items.
+    static var needsApproval: Bool { status == .requiresApproval }
 
     /// Returns an error message for the owner, or nil on success.
     static func setEnabled(_ enabled: Bool) -> String? {

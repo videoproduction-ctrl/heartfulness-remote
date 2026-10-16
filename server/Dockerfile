@@ -4,10 +4,11 @@
 #   docker build -f server/Dockerfile -t heartfulness-server .
 #
 # Base images are pinned by tag. They are deliberately NOT pinned by digest:
-# the weekly rebuild timer (deploy/heartfulness-rebuild.timer) re-pulls these
+# the weekly rebuild timer (deploy/systemd/heartfulness-rebuild.timer) re-pulls these
 # same tags to pick up OS security patches. Digests at the time of writing
-# (for audit): node 22.23.3-alpine3.24 sha256:0a7108bf…, golang 1.24.13-alpine
-# sha256:8bee1901…, distroless static-debian12:nonroot sha256:afa5c872….
+# (2026-10-16, for audit): node 22.23.3-alpine3.24 sha256:0a7108bf…,
+# golang 1.27.2-alpine sha256:f92b6ef8…, distroless static-debian12:nonroot
+# sha256:afa5c872….
 #
 # Optional: networks with a TLS-inspecting proxy can pass its CA bundle as a
 # BuildKit secret (never stored in any layer):

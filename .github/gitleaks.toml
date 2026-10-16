@@ -5,14 +5,26 @@ title = "Heartfulness Remote secret scan"
 [extend]
 useDefault = true
 
-# Go tests and the published cross-language test vectors contain obviously
-# fake credentials. Only the high-noise `generic-api-key` rule is relaxed for
-# them; every specific rule (private keys, GitHub/AWS/... tokens) still applies.
-[[allowlists]]
+# Only the high-noise `generic-api-key` rule is relaxed, and only for:
+#  * Go/TS tests and the published cross-language test vectors, which contain
+#    obviously fake credentials;
+#  * Swift type annotations such as `let privateKey: Curve25519.Signing.PrivateKey`.
+# Every specific rule (private keys, GitHub/AWS/Slack/... tokens) still applies
+# to every file.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
 description = "Dummy values in tests and test vectors"
-targetRules = ["generic-api-key"]
 paths = [
-  '''(^|/)[^/]+_test\.go$''',
-  '''(^|/)[^/]+\.test\.ts$''',
+  '''_test\.go$''',
+  '''\.test\.ts$''',
   '''^testdata/''',
+]
+
+[[rules.allowlists]]
+description = "Swift type annotations, not values"
+regexTarget = "line"
+regexes = [
+  '''(?i)\b(let|var)\s+\w*(key|secret|token)\w*\s*:\s*[A-Z][\w.]*''',
 ]

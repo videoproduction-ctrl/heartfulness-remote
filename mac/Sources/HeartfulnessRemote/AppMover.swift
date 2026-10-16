@@ -91,7 +91,8 @@ enum AppMover {
     }
 
     /// If another copy is already running, waits briefly (it may be the old copy quitting
-    /// after "Move to Applications"), then either continues or hands over and quits.
+    /// after "Move to Applications" or "Reopen", which first stops its helper), then either
+    /// continues or hands over and quits.
     /// Calls `completion(true)` if this instance should carry on starting up.
     static func ensureSingleInstance(completion: @escaping @MainActor (Bool) -> Void) {
         guard let bundleID = Bundle.main.bundleIdentifier else {
@@ -100,7 +101,7 @@ enum AppMover {
         }
         let me = NSRunningApplication.current.processIdentifier
         Task { @MainActor in
-            for _ in 0..<20 {
+            for _ in 0..<40 {
                 let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
                     .filter { $0.processIdentifier != me && !$0.isTerminated }
                 if others.isEmpty {

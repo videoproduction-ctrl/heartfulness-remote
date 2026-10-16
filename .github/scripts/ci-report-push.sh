@@ -77,11 +77,13 @@ status_of() { sed -n 's/^status: //p' "$1/status.txt" | head -n 1; }
 
 refspecs=()
 commit_report() {
-  local branch="$1" dir="$2" st blob_log blob_status tree commit
+  local branch="$1" dir="$2" st blob_log blob_status blob_err tree commit
   st="$(status_of "$dir")"
   blob_log="$(git hash-object -w "$dir/job.log")"
   blob_status="$(git hash-object -w "$dir/status.txt")"
-  tree="$(printf '100644 blob %s\tjob.log\n100644 blob %s\tstatus.txt\n' "$blob_log" "$blob_status" | git mktree)"
+  [ -f "$dir/errors.txt" ] || echo "(none)" > "$dir/errors.txt"
+  blob_err="$(git hash-object -w "$dir/errors.txt")"
+  tree="$(printf '100644 blob %s\terrors.txt\n100644 blob %s\tjob.log\n100644 blob %s\tstatus.txt\n' "$blob_err" "$blob_log" "$blob_status" | git mktree)"
   commit="$(git commit-tree "$tree" -m "ci-results/$branch: ${st:-unknown} @ ${GITHUB_SHA:0:12} (run $GITHUB_RUN_ID)")"
   refspecs+=("+$commit:refs/heads/ci-results/$branch")
   printf '  %-34s %s\n' "ci-results/$branch" "${st:-unknown}"

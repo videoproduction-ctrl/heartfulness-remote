@@ -2,6 +2,7 @@
 # Collects this job's CI report into $RUNNER_TEMP/ci-report/$REPORT_NAME:
 #   status.txt  job status, run, commit, UTC time
 #   job.log     last 400 lines of $RUNNER_TEMP/job.log, secrets scrubbed
+#   errors.txt  every error/failure passage from the whole log (scrubbed)
 # Runs on Linux, macOS and Windows (Git Bash).
 set -euo pipefail
 
@@ -37,7 +38,13 @@ if [ -s "$log" ]; then
     s/(x-access-token:)[^\s@]+/$1\[REDACTED]/gi;
     s/(authorization:\s*(?:basic|bearer|token)\s+)\S+/$1\[REDACTED]/gi;
     s/(\bbearer\s+)[A-Za-z0-9._~+\/-]{16,}=*/$1\[REDACTED]/gi;
-  ' "$log" | tail -n 400 > "$out/job.log"
+  ' "$log" > "$out/scrubbed.tmp"
+  tail -n 400 "$out/scrubbed.tmp" > "$out/job.log"
+  # Every error passage from the WHOLE log (a long, noisy job pushes the real
+  # failure out of the last 400 lines).
+  grep -n -i -E -B4 -A16 '(error|fail|vulnerab|panic|::error|FAILED)' "$out/scrubbed.tmp" \
+    | head -n 1500 > "$out/errors.txt" || echo "(no error lines)" > "$out/errors.txt"
+  rm -f "$out/scrubbed.tmp"
 else
   echo "(no log captured)" > "$out/job.log"
 fi
