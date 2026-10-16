@@ -10,7 +10,56 @@ import type { BrowserContext, Page, CDPSession } from "@playwright/test";
 export const ROOT = resolve(import.meta.dirname, "..");
 export const BIN = join(ROOT, "e2e", ".bin");
 
+/** An additional simulated Mac (hostsim) attached to a running stack. */
+export interface SimMac {
+  name: string;
+  dir: string;
+  state(): any;
+  cmd(line: string): void;
+  inputLog(): any[];
+  stop(): Promise<void>;
+}
+
+/** Starts another simulated Mac against the stack's server (multi-Mac tests). */
+export async function startMac(stack: Stack, name: string, opts: { expect?: "online" } = {}): Promise<SimMac> {
+  const dir = join(stack.dir, "mac-" + name.replace(/[^a-z0-9]+/gi, "-").toLowerCase());
+  mkdirSync(join(dir, "home"), { recursive: true });
+  mkdirSync(join(dir, "downloads"), { recursive: true });
+  const stateFile = join(dir, "state.json");
+  const inputFile = join(dir, "input.jsonl");
+  const logFile = join(dir, "host.log");
+  const p = spawn(
+    join(BIN, "hostsim"),
+    [
+      "--server", stack.origin, "--name", name,
+      "--data", join(dir, "data"), "--key", join(dir, "data", "host.key"),
+      "--video", join(ROOT, "agent", "testdata", "test.ivf"), "--fps", "30",
+      "--state-file", stateFile, "--input-log", inputFile,
+      "--downloads", join(dir, "downloads"), "--home", join(dir, "home"),
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  p.stdout!.on("data", (d) => appendFileSync(logFile, d));
+  p.stderr!.on("data", (d) => appendFileSync(logFile, d));
+  const state = () => (existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, "utf8")) : {});
+  await waitFor(() => state().server === (opts.expect ?? "online"), 15000, `${name} online`);
+  stack.extraLogs.push(logFile);
+  return {
+    name, dir, state,
+    cmd: (line) => p.stdin!.write(line + "\n"),
+    inputLog: () => existsSync(inputFile)
+      ? readFileSync(inputFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [],
+    async stop() {
+      p.stdin!.write("quit\n");
+      await new Promise((r) => setTimeout(r, 200));
+      p.kill("SIGTERM");
+    },
+  };
+}
+
 export interface Stack {
+  /** Log files of extra simulated Macs (included in logs()). */
+  extraLogs: string[];
   origin: string;
   dir: string;
   server: ChildProcess;
@@ -113,10 +162,12 @@ export async function startStack(port: number, opts: { hostArgs?: string[] } = {
       : [];
 
   await waitFor(() => hostState().server === "online", 15000, "host online");
+  const extraLogs: string[] = [];
 
   return {
     origin, dir, server, host, hostState, inputLog, downloadsDir, homeDir,
-    logs: () => [serverLog, hostLog].map((f) => (existsSync(f) ? readFileSync(f, "utf8") : "")).join("\n"),
+    extraLogs,
+    logs: () => [serverLog, hostLog, ...extraLogs].map((f) => (existsSync(f) ? readFileSync(f, "utf8") : "")).join("\n"),
     hostCmd: (line: string) => host.stdin!.write(line + "\n"),
     async stop() {
       host.stdin!.write("quit\n");
