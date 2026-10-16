@@ -1,14 +1,17 @@
-// Pairing a new device (PROTOCOL.md §5): commit → challenge → reveal → SAS.
-// The device only reveals its key after the host committed to `na` (signed
-// challenge), so neither side can grind the 6-digit code.
+// Asking one Mac for access (PROTOCOL.md §5, routed by hostPub per §10.3):
+// commit → challenge → reveal → SAS. The device only reveals its key after the
+// host committed to `na` (signed challenge), so neither side can grind the
+// 6-digit code. The Mac's key is pinned only after the SAS-confirmed challenge
+// key issued a valid certificate for exactly this device.
 
 import type { App, View } from "../app";
-import { type Bytes, b64, equalBytes, randomBytes } from "../b64";
+import { type Bytes, b64, equalBytes, randomBytes, unb64Len } from "../b64";
 import { cleanDeviceName, defaultDeviceName } from "../device-name";
 import { h, replace } from "../dom";
-import { formatSAS, pairCommit, parsePairChallenge, sas, verifyCert, verifyPairChallenge } from "../hr1";
+import { formatMacId, formatSAS, pairCommit, parsePairChallenge, ProtocolError, sas, verifyCert, verifyPairChallenge } from "../hr1";
+import { aboutMac, pairRevealMsg, pairStartMsg } from "../messages";
 import { type Msg, waitFor } from "../signal";
-import { button, card, confirmDialog, errorBox, errorMessage, setError, spinner } from "../ui";
+import { button, card, errorBox, errorMessage, setError, spinner } from "../ui";
 import { brand, hero, page } from "./common";
 
 const CHALLENGE_TIMEOUT_MS = 60_000;
@@ -56,13 +59,18 @@ export function pairErrorText(code: unknown): string {
   }
 }
 
-export function pairView(app: App): View {
+export function pairView(app: App, target: string | null): View {
   let destroyed = false;
   let abort: AbortController | null = null;
   const offs: Array<() => void> = [];
   const err = errorBox("pair");
   const body = h("div", { class: "stack" });
   const hostLine = h("p", { class: "status-line", testid: "pair-host-status" });
+  const macLine = h("p", { class: "center mac-ident-line", testid: "pair-mac" });
+  const targetKey: Bytes | null = target ? safeKey(target) : null;
+  const macName = () => (target ? app.macName(target) : "your Mac");
+  // Offer a way back when there is somewhere else to go (other Macs).
+  const canGoBack = () => app.macs.length > 1 || app.usableMacs.length > 0;
 
   const nameInput = h("input", {
     class: "input",
@@ -70,25 +78,34 @@ export function pairView(app: App): View {
     attrs: { type: "text", maxlength: 48, autocomplete: "off", "aria-label": "Name for this device" },
   });
   nameInput.id = "pair-device-name";
-  nameInput.value = defaultDeviceName({
-    userAgent: navigator.userAgent,
-    maxTouchPoints: navigator.maxTouchPoints,
-    app: app.platform.kind === "tauri",
-  });
+  const registered = app.me?.devices.find((d) => d.pub === app.devicePub)?.name;
+  nameInput.value =
+    registered ||
+    defaultDeviceName({
+      userAgent: navigator.userAgent,
+      maxTouchPoints: navigator.maxTouchPoints,
+      app: app.platform.kind === "tauri",
+    });
 
   const renderHost = () => {
-    const hst = app.host;
-    if (!hst) hostLine.textContent = "";
-    else if (!hst.online) hostLine.textContent = "Your Mac is offline. It must be on and running Heartfulness Remote to approve this device.";
+    const m = target ? app.mac(target) : undefined;
+    if (!m) hostLine.textContent = "";
+    else if (!m.online) hostLine.textContent = `“${m.name || "This Mac"}” is offline. It must be on and running Heartfulness Remote to approve this device.`;
     else hostLine.textContent = "";
+    replace(
+      macLine,
+      m ? h("strong", { testid: "pair-mac-name", text: m.name || "Your Mac" }) : null,
+      m ? h("span", { class: "mac-id", testid: "pair-mac-id", text: `Mac ID ${formatMacId(m.macId)}` }) : null,
+    );
+    macLine.hidden = !m;
   };
-  offs.push(app.on("host", renderHost));
+  offs.push(app.on("macs", renderHost));
   renderHost();
 
-  // A setup device may be approved by the Mac while this screen is shown.
+  // This device may be approved on the target Mac while this screen is shown.
   offs.push(
     app.on("status", () => {
-      if (app.status === "approved" && app.pinned && !abort) app.routeByStatus();
+      if (target && app.canUse(target) && !abort) app.routeByStatus();
     }),
   );
 
@@ -101,6 +118,7 @@ export function pairView(app: App): View {
       nameInput,
       h("p", { class: "hint", text: "You'll see this name on your Mac and in your list of trusted devices." }),
       button({ label: "Ask for approval", testid: "pair-start-button", variant: "primary", large: true, icon: "shield", onClick: start }),
+      canGoBack() ? button({ label: "Back to my Macs", testid: "pair-back", variant: "plain", onClick: () => app.goHome() }) : null,
     );
   }
 
@@ -109,12 +127,14 @@ export function pairView(app: App): View {
     const sig = app.signal;
     const signer = app.signer;
     if (!sig || !signer || !sig.isReady) throw new Error("Not connected to the server yet. Please wait a moment and try again.");
+    if (!target || !targetKey) throw new Error("No Mac is connected to your account yet.");
     const name = cleanDeviceName(nameInput.value) || "My device";
     const kind = app.platform.deviceKind;
     const ac = new AbortController();
     abort = ac;
+    const mine = (m: Msg) => aboutMac(m, target);
 
-    replace(body, h("p", { class: "status-line", testid: "pair-status" }, spinner(""), " Contacting your Mac…"), cancelButton());
+    replace(body, h("p", { class: "status-line", testid: "pair-status" }, spinner(""), ` Contacting “${macName()}”…`), cancelButton());
 
     try {
       const nd = randomBytes(32);
@@ -123,44 +143,41 @@ export function pairView(app: App): View {
       let requestId: string | null = null;
       offs.push(
         sig.on("pair-pending", (m) => {
-          if (typeof m["requestId"] === "string" && requestId === null) requestId = m["requestId"];
+          if (typeof m["requestId"] === "string" && requestId === null && mine(m)) requestId = m["requestId"];
         }),
       );
       // Only errors about OUR pairing (pair-start errors, or ones naming our requestId) abort it.
       const ours = (m: Msg) =>
         m.type === "pair-denied"
-          ? requestId === null || m["requestId"] === undefined || m["requestId"] === requestId
+          ? mine(m) && (requestId === null || m["requestId"] === undefined || m["requestId"] === requestId)
           : m["for"] === "pair-start" || (requestId !== null && m["requestId"] === requestId);
       const failure = waitFor(sig, ["pair-denied", "error"], ours, APPROVAL_TIMEOUT_MS + CHALLENGE_TIMEOUT_MS, ac.signal).then(
         (m) => Promise.reject(m),
         () => new Promise<never>(() => undefined),
       );
-      if (!sig.send({ type: "pair-start", name, kind, commit: b64(commit) })) throw new Error("Not connected to the server. Try again.");
+      if (!sig.send(pairStartMsg(target, name, kind, commit))) throw new Error("Not connected to the server. Try again.");
 
       // 1) Wait for the host's signed challenge (commitment to na).
       const chMsg = await Promise.race([
-        waitFor(sig, ["pair-challenge"], (m) => requestId === null || m["requestId"] === requestId, CHALLENGE_TIMEOUT_MS, ac.signal),
+        waitFor(sig, ["pair-challenge"], (m) => mine(m) && (requestId === null || m["requestId"] === requestId), CHALLENGE_TIMEOUT_MS, ac.signal),
         failure,
       ]);
       const ch = parsePairChallenge(chMsg);
       if (!(await verifyPairChallenge(ch.hostPub, ch.sig, ch.requestId, commit, ch.na))) {
         throw new Error("The challenge was not signed correctly. Do not continue; try again later.");
       }
-      if (app.pinned && !equalBytes(app.pinned, ch.hostPub)) {
-        throw new PinMismatch();
-      }
+      // The Mac that answered must be the Mac we asked.
+      if (!equalBytes(ch.hostPub, targetKey)) throw new ProtocolError("a different Mac answered this request");
       const rid = b64(ch.requestId);
 
       // 2) Reveal our key and nonce, then show the SAS.
-      if (!sig.send({ type: "pair-reveal", requestId: rid, devicePub: b64(devicePub), nd: b64(nd) })) {
-        throw new Error("Not connected to the server. Try again.");
-      }
+      if (!sig.send(pairRevealMsg(rid, devicePub, nd))) throw new Error("Not connected to the server. Try again.");
       const code = await sas(ch.hostPub, devicePub, nd, ch.na);
       showSAS(code);
 
       // 3) Wait for the decision.
       const res = await Promise.race([
-        waitFor(sig, ["pair-approved"], (m) => m["requestId"] === undefined || m["requestId"] === rid, APPROVAL_TIMEOUT_MS, ac.signal),
+        waitFor(sig, ["pair-approved"], (m) => mine(m) && (m["requestId"] === undefined || m["requestId"] === rid), APPROVAL_TIMEOUT_MS, ac.signal),
         failure,
       ]);
       await finishApproved(res, ch.hostPub, devicePub);
@@ -169,10 +186,6 @@ export function pairView(app: App): View {
       if (destroyed || ac.signal.aborted) return;
       abort = null;
       ac.abort();
-      if (e instanceof PinMismatch) {
-        showPinMismatch();
-        return;
-      }
       if (e && typeof e === "object" && "type" in e) {
         const m = e as Msg;
         if (m.type === "error" && m["code"] === "already-approved") {
@@ -180,12 +193,18 @@ export function pairView(app: App): View {
           return;
         }
         setError(err, m.type === "pair-denied" ? denialText(m["reason"]) : pairErrorText(m["code"]));
+      } else if (e instanceof ProtocolError) {
+        setError(err, `Security warning: ${e.message}. Do not continue — someone may be trying to impersonate your Mac.`);
       } else if (e instanceof Error && e.message === "timeout") {
-        setError(err, "No answer from your Mac. Make sure it's on and running Heartfulness Remote, then try again.");
+        setError(err, `No answer from “${macName()}”. Make sure it's on and running Heartfulness Remote, then try again.`);
       } else {
         setError(err, errorMessage(e));
       }
-      replace(body, button({ label: "Try again", testid: "pair-retry", variant: "primary", large: true, onClick: () => showIntro() }));
+      replace(
+        body,
+        button({ label: "Try again", testid: "pair-retry", variant: "primary", large: true, onClick: () => showIntro() }),
+        canGoBack() ? button({ label: "Back to my Macs", testid: "pair-back", variant: "plain", onClick: () => app.goHome() }) : null,
+      );
     }
   }
 
@@ -193,15 +212,14 @@ export function pairView(app: App): View {
     // Pin only a host key that (a) produced the SAS the user compared and
     // (b) issued a valid certificate for exactly our device key.
     await verifyCert(m["cert"], hostPub, devicePub);
-    await app.platform.pinHost(hostPub);
-    app.pinned = hostPub;
-    app.status = "approved";
+    await app.pinMac(hostPub, target ? app.macName(target) : "");
     abort = null;
     replace(
       body,
       h("div", { class: "success-mark", testid: "pair-approved" }, h("span", { text: "✓" })),
-      h("p", { class: "center", text: "Approved! This device can now connect to your Mac." }),
+      h("p", { class: "center", text: `Approved! This device can now connect to “${macName()}”.` }),
     );
+    app.markApproved(b64(hostPub));
     setTimeout(() => {
       if (!destroyed) app.routeByStatus();
     }, 1200);
@@ -210,7 +228,7 @@ export function pairView(app: App): View {
   function showSAS(code: string): void {
     replace(
       body,
-      h("p", { class: "center sas-intro", text: "On your Mac or phone, approve this device and check the code matches:" }),
+      h("p", { class: "center sas-intro", text: `On “${macName()}” or on a phone you use with it, approve this device and check the code matches:` }),
       h("div", { class: "sas", testid: "pair-sas", attrs: { "aria-label": `Code ${code.split("").join(" ")}`, "data-sas": code }, text: formatSAS(code) }),
       h("p", { class: "status-line", testid: "pair-status" }, spinner(""), " Waiting for approval…"),
       h("p", { class: "hint center", text: "If the code is different, deny the request — someone may be trying to get in." }),
@@ -222,52 +240,18 @@ export function pairView(app: App): View {
     return button({ label: "Cancel", testid: "pair-cancel", variant: "plain", onClick: () => showIntro() });
   }
 
-  function showPinMismatch(): void {
-    setError(err, "Security warning: the server is presenting a different Mac than the one this device trusts.");
-    replace(
-      body,
-      h("p", {
-        text: "If you reinstalled Heartfulness Remote on your Mac or reset your server, this is expected. Otherwise, someone may be trying to impersonate your Mac — do not continue.",
-      }),
-      button({
-        label: "I reinstalled my Mac — trust the new one",
-        testid: "pair-forget-host",
-        variant: "danger",
-        onClick: async () => {
-          if (
-            await confirmDialog({
-              title: "Trust a new Mac?",
-              text: "Only continue if you reinstalled Heartfulness Remote on your Mac. You will compare a 6-digit code on both screens next.",
-              confirm: "Trust new Mac",
-              danger: true,
-              testid: "pair-forget-confirm",
-            })
-          ) {
-            await app.platform.forgetHost();
-            app.pinned = null;
-            setError(err, null);
-            showIntro();
-          }
-        },
-      }),
-      button({ label: "Cancel", testid: "pair-cancel", variant: "plain", onClick: () => showIntro() }),
-    );
-  }
-
   showIntro();
+
+  const subtitle = target
+    ? "For your security, each Mac must approve this device — on the Mac itself, or on a phone you already use with it. Check that the Mac ID below matches the one shown on the Mac."
+    : "For your security, every new device must be approved on your Mac — or on a phone you already use with Heartfulness Remote.";
 
   return {
     name: "pair",
     el: page(
       "pair",
       brand(button({ label: "Sign out", testid: "signout-button", variant: "plain", icon: "signout", onClick: () => app.signOut() })),
-      card(
-        { testid: "pair-card" },
-        hero("shield", "Approve this device", "For your security, every new device must be approved on your Mac — or on a phone you already use with Heartfulness Remote."),
-        hostLine,
-        err,
-        body,
-      ),
+      card({ testid: "pair-card" }, hero("shield", "Approve this device", subtitle), macLine, hostLine, err, body),
     ),
     destroy() {
       destroyed = true;
@@ -277,8 +261,10 @@ export function pairView(app: App): View {
   };
 }
 
-class PinMismatch extends Error {
-  constructor() {
-    super("host key mismatch");
+function safeKey(pub: string): Bytes | null {
+  try {
+    return unb64Len(pub, 32);
+  } catch {
+    return null;
   }
 }

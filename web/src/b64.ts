@@ -119,6 +119,40 @@ export function base32Lower(data: Uint8Array): string {
   return out;
 }
 
+/** Uppercase RFC 4648 base32 without padding (join codes, PROTOCOL.md §10.2). */
+export function base32Upper(data: Uint8Array): string {
+  return base32Lower(data).toUpperCase();
+}
+
+const B32_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/**
+ * Decodes uppercase RFC 4648 base32 without padding. Strict: only A–Z and
+ * 2–7, no impossible lengths, no non-canonical trailing bits.
+ */
+export function unbase32(s: string): Bytes {
+  if (typeof s !== "string") throw new EncodingError("base32: not a string");
+  const rem = s.length % 8;
+  if (rem === 1 || rem === 3 || rem === 6) throw new EncodingError("base32: bad length");
+  const out = bytes(Math.floor((s.length * 5) / 8));
+  let o = 0;
+  let acc = 0;
+  let bits = 0;
+  for (let i = 0; i < s.length; i++) {
+    const v = B32_UPPER.indexOf(s[i]!);
+    if (v < 0) throw new EncodingError("base32: bad character");
+    acc = (acc << 5) | v;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      out[o++] = (acc >> bits) & 0xff;
+    }
+    acc &= (1 << bits) - 1;
+  }
+  if (acc !== 0) throw new EncodingError("base32: non-canonical");
+  return out;
+}
+
 const enc = new TextEncoder();
 const dec = new TextDecoder("utf-8", { fatal: true });
 

@@ -1,30 +1,27 @@
 // Application controller: authentication state, the signaling connection,
-// device approval state, the approvals inbox and view routing.
+// the owner's Macs (PROTOCOL.md §10) with this device's approval on each,
+// pinned Mac keys, the approvals inbox and view routing.
 
-import { Api, ApiError, type HostInfo, type Me } from "./api";
+import { Api, ApiError, type DeviceInfo, type DeviceProof, type HostInfo, type Me } from "./api";
 import { type Bytes, b64, unb64Len } from "./b64";
 import { clear } from "./dom";
-import {
-  type ApprovalRequest,
-  checkApprovalRequest,
-  nowSeconds,
-  parseApprovalNeeded,
-  signKillRequest,
-  signPairApprove,
-  signRevokeRequest,
-  type Signer,
-} from "./hr1";
+import { type Fragment, type JoinFragment, takeFragment } from "./fragment";
+import { type ApprovalRequest, checkApprovalRequest, macId as computeMacId, nowSeconds, parseApprovalNeeded, PUB_SIZE, type Signer } from "./hr1";
+import { aboutMac, killRequestMsg, pairApproveMsg, pairDenyMsg, revokeRequestMsg } from "./messages";
+import type { PinMap } from "./pins";
 import type { Platform } from "./platform";
-import { type DeviceStatus, type Msg, parseStatus, type ReadyInfo, Signal, type SignalState } from "./signal";
+import { type DeviceStatus, type Msg, parseReady, parseStatus, type ReadyHost, type ReadyInfo, Signal, type SignalState, waitFor } from "./signal";
+import { requestPersistence } from "./store";
 import { errorMessage, toast } from "./ui";
+import { addMacView, joinNeedsApprovalView } from "./views/addmac";
+import { errorView, loadingView, missingPinView, notSetUpView, revokedView, unsupportedView } from "./views/common";
 import { firstRunView } from "./views/firstrun";
 import { homeView } from "./views/home";
 import { linkApproveView } from "./views/link";
 import { loginView } from "./views/login";
-import { errorView, loadingView, missingPinView, notSetUpView, revokedView, unsupportedView } from "./views/common";
 import { pairView } from "./views/pair";
 import { sessionView } from "./views/session";
-import { type SetupFragment, setupView } from "./views/setup";
+import { setupView } from "./views/setup";
 
 export interface View {
   name: string;
@@ -32,8 +29,17 @@ export interface View {
   destroy?(): void;
 }
 
+/** One of the owner's Macs, with THIS device's approval status on it. */
+export interface Mac extends HostInfo {
+  /** 9-digit Mac ID computed locally from `pub` (never taken from the server). */
+  macId: string;
+  deviceStatus: DeviceStatus;
+}
+
 export interface Approval {
   key: string;
+  hostPub: string;
+  requestId: string;
   req: ApprovalRequest;
   sas: string | null;
   error: string | null;
@@ -41,27 +47,46 @@ export interface Approval {
   receivedAt: number;
 }
 
-type AppEvent = "host" | "approvals" | "me" | "signal" | "status";
+type AppEvent = "macs" | "approvals" | "me" | "signal" | "status" | "pins";
 
 const APPROVAL_TTL_MS = 5 * 60 * 1000;
+
+/** Aggregate approval of this device over all Macs: approved on any wins. */
+export function aggregateStatus(macs: ReadonlyArray<{ deviceStatus: DeviceStatus }>): DeviceStatus {
+  if (macs.some((m) => m.deviceStatus === "approved")) return "approved";
+  if (macs.some((m) => m.deviceStatus === "pending")) return "pending";
+  if (macs.some((m) => m.deviceStatus === "revoked")) return "revoked";
+  return "unknown";
+}
+
+/** This device's status on each Mac according to /api/me (devices[mine].approvals). */
+export function statusFromMe(me: Me, devicePub: string): (hostPub: string) => DeviceStatus {
+  const mine = me.devices.find((d) => d.pub === devicePub);
+  return (hostPub) => parseStatus(mine?.approvals.find((a) => a.hostPub === hostPub)?.status);
+}
 
 export class App {
   readonly api: Api;
   signal: Signal | null = null;
   signer: Signer | null = null;
   me: Me | null = null;
-  host: HostInfo | null = null;
-  status: DeviceStatus = "unknown";
-  pinned: Bytes | null = null;
+  /** The account's Macs in server order (at most 20). */
+  macs: Mac[] = [];
+  /** Pinned (verified) Mac keys on this device. */
+  pins: PinMap = new Map();
   readonly approvals = new Map<string, Approval>();
+  /** A join link (#join=…) waiting for sign-in / routing. Memory only. */
+  pendingJoin: JoinFragment | null = null;
   private view: View | null = null;
   private readonly events = new EventTarget();
   private signalOffs: Array<() => void> = [];
+  private readonly macIds = new Map<string, string>();
+  private macsSeq = 0;
 
   constructor(
     readonly platform: Platform,
     readonly root: HTMLElement,
-    private setupFragment: SetupFragment | null,
+    private fragment: Fragment | null,
   ) {
     this.api = new Api(platform);
     window.addEventListener("hashchange", () => this.onHashChange());
@@ -78,6 +103,115 @@ export class App {
 
   private emit(ev: AppEvent): void {
     this.events.dispatchEvent(new Event(ev));
+  }
+
+  // ------------------------------------------------------------ Macs & pins
+
+  /** This device's aggregate status (approved on at least one Mac → "approved"). */
+  get status(): DeviceStatus {
+    return aggregateStatus(this.macs);
+  }
+
+  get devicePub(): string {
+    return this.signer ? b64(this.signer.pub) : "";
+  }
+
+  mac(pub: string): Mac | undefined {
+    return this.macs.find((m) => m.pub === pub);
+  }
+
+  /** Display name for a Mac: the server's name, else the name it was pinned with. */
+  macName(pub: string): string {
+    return this.mac(pub)?.name || this.pins.get(pub)?.name || "your Mac";
+  }
+
+  /** The PINNED key of a Mac, or null when this device has not verified that Mac. */
+  pinBytes(pub: string): Bytes | null {
+    if (!this.pins.has(pub)) return null;
+    try {
+      return unb64Len(pub, PUB_SIZE);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Approved on that Mac AND its key is pinned: this device can connect / sign for it. */
+  canUse(pub: string): boolean {
+    return this.mac(pub)?.deviceStatus === "approved" && this.pins.has(pub);
+  }
+
+  get usableMacs(): Mac[] {
+    return this.macs.filter((m) => this.canUse(m.pub));
+  }
+
+  private async loadPins(): Promise<PinMap> {
+    const store = this.platform.pins();
+    if (!store) return new Map();
+    try {
+      return await store.load();
+    } catch {
+      return new Map();
+    }
+  }
+
+  /** Pins a verified Mac key (setup QR, SAS pairing + cert, or join hostMac). */
+  async pinMac(hostPub: Uint8Array, name: string): Promise<void> {
+    const store = this.platform.pins();
+    if (!store) throw new Error("No server address is configured.");
+    this.pins = await store.add(hostPub, name);
+    void requestPersistence();
+    this.emit("pins");
+  }
+
+  async unpinMac(pub: string): Promise<void> {
+    const store = this.platform.pins();
+    if (store) this.pins = await store.remove(pub);
+    this.emit("pins");
+  }
+
+  /** Records locally that this device is now approved on a Mac (after a verified cert). */
+  markApproved(pub: string): void {
+    const prev = this.status;
+    const m = this.mac(pub);
+    if (m) m.deviceStatus = "approved";
+    this.emit("macs");
+    if (prev !== this.status) this.onStatusChanged(prev);
+    void this.refreshMe();
+  }
+
+  private async toMacs(hosts: HostInfo[], statusOf: (h: HostInfo) => DeviceStatus): Promise<Mac[]> {
+    const out: Mac[] = [];
+    for (const h of hosts) {
+      let id = this.macIds.get(h.pub);
+      if (!id) {
+        id = await computeMacId(unb64Len(h.pub, PUB_SIZE));
+        this.macIds.set(h.pub, id);
+      }
+      out.push({ ...h, macId: id, deviceStatus: statusOf(h) });
+    }
+    return out;
+  }
+
+  private async setMacs(hosts: HostInfo[], statusOf: (h: HostInfo) => DeviceStatus): Promise<void> {
+    const seq = ++this.macsSeq;
+    const next = await this.toMacs(hosts, statusOf);
+    if (seq !== this.macsSeq) return; // a newer update won
+    const prevStatus = this.status;
+    const before = new Map(this.macs.map((m) => [m.pub, m.deviceStatus]));
+    this.macs = next;
+    for (const m of next) {
+      if (before.get(m.pub) === "approved" && m.deviceStatus === "revoked") {
+        toast(`This device was removed from “${m.name || "a Mac"}”.`, "info", 7000);
+      }
+    }
+    // Drop inbox entries for Macs that left the account.
+    for (const [k, a] of this.approvals) if (!this.mac(a.hostPub)) this.approvals.delete(k);
+    this.emit("macs");
+    if (prevStatus !== this.status) this.onStatusChanged(prevStatus);
+  }
+
+  private applyReady(info: ReadyInfo): Promise<void> {
+    return this.setMacs(info.hosts, (h) => (h as ReadyHost).deviceStatus);
   }
 
   // ------------------------------------------------------------ views
@@ -115,6 +249,17 @@ export class App {
   }
 
   private onHashChange(): void {
+    // A setup / join QR link opened in a tab that is already running (same
+    // document): take the secret out of the address bar first.
+    const frag = takeFragment();
+    if (frag) {
+      if (this.handleFragment(frag)) return;
+      if (frag.kind === "join") {
+        if (this.me && this.signalState === "ready") this.routeByStatus();
+        else void this.boot();
+      }
+      return;
+    }
     const hash = location.hash;
     if (hash === "#link") {
       if (this.me) this.show(linkApproveView(this));
@@ -130,6 +275,27 @@ export class App {
       return;
     }
     if (hash === "#session" && this.viewName !== "session") this.replaceHash("");
+  }
+
+  /** Acts on a setup/join link. Returns true when it showed a view itself. */
+  private handleFragment(f: Fragment): boolean {
+    if (f.kind === "invalid") {
+      toast(
+        f.of === "setup"
+          ? "This setup link is damaged. On your Mac, show the QR code again and rescan it."
+          : "This link to add a Mac is damaged. On the new Mac, show the code again and rescan it.",
+        "error",
+        9000,
+      );
+      return false;
+    }
+    if (f.kind === "setup") {
+      this.show(setupView(this, f.frag));
+      return true;
+    }
+    this.pendingJoin?.t.fill(0);
+    this.pendingJoin = f.frag;
+    return false;
   }
 
   // ------------------------------------------------------------ boot & routing
@@ -150,16 +316,15 @@ export class App {
       this.show(firstRunView(this));
       return;
     }
-    if (this.setupFragment) {
-      const f = this.setupFragment;
-      this.setupFragment = null;
-      this.show(setupView(this, f));
-      return;
+    if (this.fragment) {
+      const f = this.fragment;
+      this.fragment = null;
+      if (this.handleFragment(f)) return;
     }
     await this.boot();
   }
 
-  /** Works out who we are (session? device status?) and shows the right view. */
+  /** Works out who we are (session? approvals?) and shows the right view. */
   async boot(): Promise<void> {
     this.show(loadingView("Connecting…"));
     try {
@@ -192,6 +357,7 @@ export class App {
     try {
       const st = await this.api.status();
       if (!st.claimed) {
+        this.dropPendingJoin();
         this.show(notSetUpView(this));
         return;
       }
@@ -202,29 +368,60 @@ export class App {
     this.show(loginView(this));
   }
 
-  /** Shows the main view for the current device status. */
+  private dropPendingJoin(): void {
+    this.pendingJoin?.t.fill(0);
+    this.pendingJoin = null;
+  }
+
+  /** Shows the main view for this device's approvals. */
   routeByStatus(): void {
     if (location.hash === "#link" && this.me) {
       this.show(linkApproveView(this));
       return;
     }
     if (location.hash !== "") this.replaceHash("");
+    if (this.pendingJoin) {
+      const f = this.pendingJoin;
+      this.pendingJoin = null;
+      if (this.usableMacs.length > 0) {
+        this.show(addMacView(this, f));
+      } else {
+        f.t.fill(0);
+        this.show(joinNeedsApprovalView(this));
+      }
+      return;
+    }
     switch (this.status) {
       case "approved":
-        this.show(this.pinned ? homeView(this) : missingPinView(this));
+        this.show(this.usableMacs.length > 0 ? homeView(this) : missingPinView(this));
         return;
       case "revoked":
-        this.show(revokedView(this));
-        return;
+        if (this.macs.length <= 1) {
+          this.show(revokedView(this));
+          return;
+        }
+        break;
       default:
-        this.show(pairView(this));
+        break;
     }
+    // Not approved on any Mac yet. With one Mac, ask it straight away (as
+    // before); with several, let the owner choose which Mac to ask.
+    if (this.macs.length > 1) this.show(homeView(this));
+    else this.show(pairView(this, this.macs[0]?.pub ?? null));
   }
 
-  goSession(): void {
-    if (this.status !== "approved" || !this.pinned) return;
+  goSession(pub: string): void {
+    if (!this.canUse(pub)) return;
     this.setHash("#session");
-    this.show(sessionView(this));
+    this.show(sessionView(this, pub));
+  }
+
+  goPair(pub: string): void {
+    this.show(pairView(this, pub));
+  }
+
+  goAddMac(): void {
+    this.show(addMacView(this, null));
   }
 
   /** Leaves the session (or link) screen and returns to Home. */
@@ -236,11 +433,6 @@ export class App {
   }
 
   // ------------------------------------------------------------ signaling
-
-  /** True if the server reports a host key different from the one we pinned. */
-  get hostMismatch(): boolean {
-    return !!(this.pinned && this.host && this.host.pub !== "" && this.host.pub !== b64(this.pinned));
-  }
 
   get signalState(): SignalState {
     return this.signal?.state ?? "closed";
@@ -258,13 +450,15 @@ export class App {
     this.closeSignal();
     this.signer = await this.platform.signer(true);
     if (!this.signer) throw new Error("Could not create this device's security key.");
-    this.pinned = await this.platform.pinnedHost();
+    this.pins = await this.loadPins();
     const sig = new Signal(this.platform, this.signer);
     this.signal = sig;
     const offs = this.signalOffs;
-    offs.push(sig.on("ready", (m) => this.onReady(m)));
+    offs.push(sig.on("ready", (m) => void this.applyReady(parseReady(m))));
     offs.push(sig.on("host-status", (m) => this.onHostStatus(m)));
     offs.push(sig.on("devices-changed", () => void this.refreshMe()));
+    offs.push(sig.on("hosts-changed", () => void this.refreshMe()));
+    offs.push(sig.on("host-joined", () => void this.refreshMe()));
     offs.push(sig.on("approval-needed", (m) => void this.onApprovalNeeded(m)));
     offs.push(sig.on("approval-closed", (m) => this.onApprovalClosed(m)));
     offs.push(
@@ -277,63 +471,58 @@ export class App {
       }),
     );
     const info = await sig.connect();
-    this.status = info.status;
-    this.host = info.host;
+    await this.applyReady(info);
     return info;
   }
 
-  private onReady(m: Msg): void {
-    const prev = this.status;
-    this.status = parseStatus((m["device"] as Record<string, unknown> | undefined)?.["status"]);
-    this.host = this.signal?.lastReady?.host ?? this.host;
-    this.emit("host");
-    if (prev !== this.status) this.onStatusChanged(prev);
-  }
-
   private onHostStatus(m: Msg): void {
-    const h: HostInfo = { ...(this.host ?? { pub: "", name: "", online: false, state: "" }) };
-    if (typeof m["online"] === "boolean") h.online = m["online"];
-    if (typeof m["state"] === "string") h.state = m["state"];
-    if (typeof m["sessionDeviceName"] === "string") h.sessionDeviceName = m["sessionDeviceName"];
-    else delete h.sessionDeviceName;
-    if (typeof m["name"] === "string") h.name = m["name"];
-    this.host = h;
-    this.emit("host");
+    let pub = typeof m["hostPub"] === "string" ? m["hostPub"] : "";
+    if (pub === "" && this.macs.length === 1) pub = this.macs[0]!.pub; // older single-Mac server
+    const mac = this.mac(pub);
+    if (!mac) {
+      if (pub !== "") void this.refreshMe(); // a Mac we don't know yet
+      return;
+    }
+    if (typeof m["online"] === "boolean") mac.online = m["online"];
+    if (typeof m["state"] === "string") mac.state = m["state"].slice(0, 40);
+    if (typeof m["sessionDeviceName"] === "string" && m["sessionDeviceName"] !== "") mac.sessionDeviceName = m["sessionDeviceName"].slice(0, 200);
+    else delete mac.sessionDeviceName;
+    if (typeof m["name"] === "string" && m["name"] !== "") mac.name = m["name"].slice(0, 200);
+    this.emit("macs");
   }
 
   async refreshMe(): Promise<void> {
+    let me: Me;
     try {
-      this.me = await this.api.me();
+      me = await this.api.me();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         await this.toLogin();
       }
       return;
     }
-    if (this.me.host) {
-      const h = this.me.host;
-      this.host = { ...h, pub: h.pub || this.host?.pub || "" };
-      this.emit("host");
-    }
-    const mine = this.signer ? this.me.devices.find((d) => d.pub === b64(this.signer!.pub)) : undefined;
-    if (mine) {
-      const s = parseStatus(mine.status);
-      if (s !== this.status) {
-        const prev = this.status;
-        this.status = s;
-        this.onStatusChanged(prev);
-      }
-    }
+    this.me = me;
+    await this.setMacs(me.hosts, (() => {
+      const of = statusFromMe(me, this.devicePub);
+      return (h: HostInfo) => of(h.pub);
+    })());
     this.emit("me");
   }
 
   private onStatusChanged(prev: DeviceStatus): void {
     this.emit("status");
     // Views that manage approval themselves (pairing, setup) listen to "status".
-    if (this.status === "revoked" && prev !== "revoked") {
+    if (this.status === "revoked" && prev !== "revoked" && this.macs.length <= 1) {
       toast("This device was removed from your Mac's trusted devices.", "info");
       this.show(revokedView(this));
     }
+  }
+
+  /** Resolves with `host-joined` for that Mac (§10.2 step 5), or rejects on timeout/abort. */
+  waitHostJoined(hostPub: string, timeoutMs: number, abort?: AbortSignal): Promise<Msg> {
+    const sig = this.signal;
+    if (!sig) return Promise.reject(new Error("Not connected to the server."));
+    return waitFor(sig, ["host-joined"], (m) => m["hostPub"] === hostPub, timeoutMs, abort);
   }
 
   // ------------------------------------------------------------ approvals inbox
@@ -345,26 +534,39 @@ export class App {
     } catch {
       return; // malformed: ignore
     }
-    const key = b64(req.requestId);
+    let hostPub = typeof m["hostPub"] === "string" ? m["hostPub"] : "";
+    if (hostPub === "" && this.pins.size === 1) hostPub = [...this.pins.keys()][0]!; // older single-Mac server
+    const requestId = b64(req.requestId);
+    const key = `${hostPub}|${requestId}`;
     if (this.approvals.has(key)) return;
-    const a: Approval = { key, req, sas: null, error: null, state: "open", receivedAt: Date.now() };
-    if (!this.pinned) {
-      a.error = "This device can't check the request because it doesn't know your Mac's key.";
+    const a: Approval = { key, hostPub, requestId, req, sas: null, error: null, state: "open", receivedAt: Date.now() };
+    // Verify with THAT Mac's pinned key — never with a key the server supplies.
+    const pin = this.pinBytes(hostPub);
+    if (!pin) {
+      a.error = "This device can't check the request because it doesn't know that Mac's security key.";
     } else {
       try {
-        a.sas = await checkApprovalRequest(this.pinned, req);
+        a.sas = await checkApprovalRequest(pin, req);
       } catch (e) {
         a.error = `Security check failed: ${errorMessage(e)}. Do not approve.`;
       }
     }
     this.approvals.set(key, a);
     this.emit("approvals");
-    if (this.viewName !== "home") toast(`“${req.name}” is asking to use your Mac. Open Home to review.`, "info", 8000);
+    if (this.viewName !== "home") toast(`“${req.name}” is asking to use “${this.macName(hostPub)}”. Open Home to review.`, "info", 8000);
   }
 
   private onApprovalClosed(m: Msg): void {
     const id = m["requestId"];
-    if (typeof id === "string" && this.approvals.delete(id)) this.emit("approvals");
+    if (typeof id !== "string") return;
+    let changed = false;
+    for (const [k, a] of this.approvals) {
+      if (a.requestId === id && aboutMac(m, a.hostPub)) {
+        this.approvals.delete(k);
+        changed = true;
+      }
+    }
+    if (changed) this.emit("approvals");
   }
 
   private expireApprovals(): void {
@@ -382,18 +584,13 @@ export class App {
   async approve(key: string): Promise<void> {
     const a = this.approvals.get(key);
     if (!a || a.state !== "open" || !a.sas || a.error) return;
-    if (!this.signer || !this.pinned || !this.signal) throw new Error("Not connected.");
+    const pin = this.pinBytes(a.hostPub);
+    if (!this.signer || !pin || !this.signal) throw new Error("Not connected.");
     a.state = "sending";
     this.emit("approvals");
     try {
-      const sig = await signPairApprove(this.signer, this.pinned, a.req);
-      const ok = this.signal.send({
-        type: "pair-approve",
-        requestId: key,
-        approverPub: b64(this.signer.pub),
-        sig: b64(sig),
-      });
-      if (!ok) throw new Error("Not connected to the server. Try again.");
+      const msg = await pairApproveMsg(this.signer, pin, a.req);
+      if (!this.signal.send(msg)) throw new Error("Not connected to the server. Try again.");
       a.state = "sent";
     } catch (e) {
       a.state = "open";
@@ -406,43 +603,78 @@ export class App {
   deny(key: string): void {
     const a = this.approvals.get(key);
     if (!a || !this.signal) return;
-    if (!this.signal.send({ type: "pair-deny", requestId: key })) throw new Error("Not connected to the server. Try again.");
+    if (!this.signal.send(pairDenyMsg(a.hostPub, a.requestId))) throw new Error("Not connected to the server. Try again.");
     this.approvals.delete(key);
     this.emit("approvals");
   }
 
-  // ------------------------------------------------------------ device management
+  // ------------------------------------------------------------ device & Mac management
 
-  async revokeDevice(targetPubB64: string): Promise<void> {
-    if (!this.signer || !this.pinned || !this.signal) throw new Error("Not connected.");
-    const target = unb64Len(targetPubB64, 32);
-    const ts = nowSeconds();
-    const sig = await signRevokeRequest(this.signer, this.pinned, target, ts);
-    const ok = this.signal.send({
-      type: "revoke-request",
-      targetPub: targetPubB64,
-      ts,
-      approverPub: b64(this.signer.pub),
-      sig: b64(sig),
-    });
-    if (!ok) throw new Error("Not connected to the server. Try again.");
+  /** Macs where `device` is approved AND this device can sign for (approved + pinned). */
+  revokableMacs(device: DeviceInfo): Mac[] {
+    return this.macs.filter((m) => this.canUse(m.pub) && device.approvals.some((a) => a.hostPub === m.pub && a.status === "approved"));
   }
 
-  async killSwitch(action: "kill" | "resume"): Promise<void> {
-    if (!this.signer || !this.pinned || !this.signal) throw new Error("Not connected.");
+  /** Sends a signed revoke-request to every Mac the device is approved on (that we can sign for). Returns how many. */
+  async revokeDevice(device: DeviceInfo): Promise<number> {
+    if (!this.signer || !this.signal) throw new Error("Not connected.");
+    const target = unb64Len(device.pub, PUB_SIZE);
     const ts = nowSeconds();
-    const sig = await signKillRequest(this.signer, this.pinned, action, ts);
-    const ok = this.signal.send({ type: "kill-request", action, ts, approverPub: b64(this.signer.pub), sig: b64(sig) });
-    if (!ok) throw new Error("Not connected to the server. Try again.");
+    let sent = 0;
+    for (const m of this.revokableMacs(device)) {
+      const pin = this.pinBytes(m.pub);
+      if (!pin) continue;
+      const msg = await revokeRequestMsg(this.signer, pin, target, ts);
+      if (!this.signal.send(msg)) throw new Error("Not connected to the server. Try again.");
+      sent++;
+    }
+    return sent;
   }
 
-  /** Forgets the device key (and optionally the pinned Mac key) and starts pairing again. */
-  async resetDevice(forgetHost: boolean): Promise<void> {
+  async killSwitch(pub: string, action: "kill" | "resume"): Promise<void> {
+    const pin = this.pinBytes(pub);
+    if (!this.signer || !this.signal || !pin || !this.canUse(pub)) throw new Error("This device can't control that Mac.");
+    const msg = await killRequestMsg(this.signer, pin, action, nowSeconds());
+    if (!this.signal.send(msg)) throw new Error("Not connected to the server. Try again.");
+  }
+
+  /** "device proof" for state-changing API calls (fresh single-use nonce). */
+  async deviceProof(): Promise<DeviceProof> {
+    const origin = this.platform.origin();
+    if (!this.signer || !origin) throw new Error("This device's key is not available.");
+    return this.api.deviceProof(this.signer, origin);
+  }
+
+  /** This device's name and kind exactly as the server registered them (signed into the join setupMac). */
+  async registeredDevice(): Promise<{ name: string; kind: string }> {
+    const find = () => this.me?.devices.find((d) => d.pub === this.devicePub);
+    if (!find()) await this.refreshMe();
+    const d = find();
+    if (!d) throw new Error("This device isn't registered with your account yet. Approve it on one of your Macs first.");
+    return { name: d.name, kind: d.kind || this.platform.deviceKind };
+  }
+
+  /** Unbinds a Mac from the account (POST /api/hosts/remove) and forgets its key here. */
+  async removeMac(pub: string): Promise<void> {
+    const proof = await this.deviceProof();
+    await this.api.hostsRemove(proof, pub);
+    await this.unpinMac(pub);
+    this.macs = this.macs.filter((m) => m.pub !== pub);
+    for (const [k, a] of this.approvals) if (a.hostPub === pub) this.approvals.delete(k);
+    this.emit("macs");
+    this.emit("approvals");
+    await this.refreshMe();
+  }
+
+  /** Forgets the device key (and optionally all pinned Mac keys) and starts pairing again. */
+  async resetDevice(forgetPins: boolean): Promise<void> {
     this.closeSignal();
     await this.platform.resetDeviceKey();
-    if (forgetHost) await this.platform.forgetHost();
-    this.pinned = null;
-    this.status = "unknown";
+    if (forgetPins) {
+      await this.platform.pins()?.clear();
+      this.pins = new Map();
+    }
+    this.macs = this.macs.map((m) => ({ ...m, deviceStatus: "unknown" }));
     await this.boot();
   }
 
@@ -454,8 +686,9 @@ export class App {
     }
     await this.platform.clearToken().catch(() => undefined);
     this.closeSignal();
+    this.dropPendingJoin();
     this.me = null;
-    this.status = "unknown";
+    this.macs = [];
     this.show(loginView(this));
   }
 }

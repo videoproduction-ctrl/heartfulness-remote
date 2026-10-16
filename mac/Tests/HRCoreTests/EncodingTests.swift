@@ -14,6 +14,13 @@ enum Vectors {
         var sig: String
     }
 
+    /// Adding another Mac (PROTOCOL.md §10).
+    struct Join: Decodable {
+        var macId: String
+        var t: String
+        var code: String
+    }
+
     struct File: Decodable {
         var hostSeedHex: String
         var hostPub: String
@@ -22,6 +29,7 @@ enum Vectors {
         var hostFingerprint: String
         var tbs: [TBSVector]
         var sas: String
+        var join: Join?
         var inputs: [String: String]
     }
 

@@ -142,6 +142,11 @@ final class HostSigner: @unchecked Sendable {
         Fingerprint.format(sha256Digest: Array(SHA256.hash(data: publicKey)))
     }
 
+    /// Mac ID (PROTOCOL.md §10.1): nine digits, no spaces ("" never happens for a 32-byte digest).
+    var macID: String {
+        MacIDFormatter.code(fromDigest: Array(SHA256.hash(data: MacIDFormatter.transcript(hostPub: publicKey)))) ?? ""
+    }
+
     /// Answers a SIGN_REQUEST. Only host-signed transcript labels (PROTOCOL §3) are signed.
     func respond(to request: SignRequest) -> SignResult {
         guard let data = Base64URL.decode(request.data) else {

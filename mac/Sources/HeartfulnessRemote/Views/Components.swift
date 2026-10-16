@@ -82,6 +82,116 @@ struct StatusHeader: View {
     }
 }
 
+/// "Mac ID 482 913 557" under the big status. The owner reads it out or types it on another
+/// device to find this Mac; it is not a secret.
+struct MacIDLabel: View {
+    let line: String
+    var large = false
+
+    var body: some View {
+        Label {
+            Text(line)
+                .monospacedDigit()
+                .textSelection(.enabled)
+        } icon: {
+            Image(systemName: "desktopcomputer")
+        }
+        .font(large ? Font.title3.weight(.semibold) : Font.callout.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// Numbered instructions (1. 2. 3.).
+struct NumberedSteps: View {
+    let items: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(items.enumerated()), id: \.offset) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(item.offset + 1).")
+                        .font(.body.weight(.semibold))
+                        .monospacedDigit()
+                    Text(item.element)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+/// "Add this Mac to your account" (PROTOCOL.md §10.2): a QR code for a phone that is already
+/// signed in, plus the typed alternative — Mac ID and one-time code — for any other device.
+struct JoinMacPanel: View {
+    let qrImage: NSImage
+    /// Formatted, e.g. "482 913 557".
+    let macID: String
+    /// Formatted by the agent, e.g. "K7QP-3MZD-WX2R-9TFA".
+    let joinCode: String
+    var qrSize: CGFloat = 190
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 22) {
+                Image(nsImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: qrSize, height: qrSize)
+                    .padding(12)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityLabel(Text("Code for adding this Mac to your account"))
+                NumberedSteps(items: AccountText.scanSteps)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                Text(AccountText.typeInstead)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 32) {
+                    JoinValue(caption: "Mac ID", value: macID, selectable: true)
+                    // The code is a one-time secret: shown for typing, not selectable or copyable.
+                    JoinValue(caption: "Code", value: joinCode, selectable: false)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Label(AccountText.codePrivacy, systemImage: "lock.fill")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A caption above a large monospaced value ("Mac ID" / "482 913 557").
+private struct JoinValue: View {
+    let caption: String
+    let value: String
+    let selectable: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(caption)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if selectable {
+                valueText.textSelection(.enabled)
+            } else {
+                valueText
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .font(.system(size: 26, weight: .bold, design: .monospaced))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+}
+
 /// "Connected for 12:34 · Direct connection · 18 ms" + Disconnect button.
 struct SessionControls: View {
     let session: SessionInfo

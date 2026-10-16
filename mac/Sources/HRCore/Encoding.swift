@@ -100,6 +100,39 @@ public enum SASFormatter {
     }
 }
 
+/// Mac ID helpers (PROTOCOL.md §10.1): a 9-digit display number for a host key,
+/// `u32be(SHA-256(TBS("HR1/mac-id", hostPub))[0:4]) mod 10^9`, shown "482 913 557".
+/// It is only a name to type or read out — never used to decide trust.
+public enum MacIDFormatter {
+    public static let label = "HR1/mac-id"
+
+    /// "482913557" → "482 913 557". Anything that is not exactly nine digits is returned unchanged.
+    public static func format(_ raw: String) -> String {
+        guard let digits = digits(raw) else { return raw }
+        let chars = Array(digits)
+        return String(chars[0..<3]) + " " + String(chars[3..<6]) + " " + String(chars[6..<9])
+    }
+
+    /// The nine digits of a Mac ID, ignoring spaces and dashes; nil if it isn't one.
+    public static func digits(_ raw: String) -> String? {
+        let digits = raw.filter { $0 != " " && $0 != "-" }
+        guard digits.count == 9, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return digits
+    }
+
+    /// The bytes to hash with SHA-256 (the caller hashes with CryptoKit; HRCore is Foundation-only).
+    public static func transcript(hostPub: Data) -> Data {
+        TBS.build(label: label, fields: [hostPub])
+    }
+
+    /// The Mac ID from SHA-256(transcript): nine digits, zero-padded, no spaces.
+    public static func code(fromDigest digest: [UInt8]) -> String? {
+        guard let v = BigEndian.readUInt32(digest, at: 0) else { return nil }
+        let s = String(v % 1_000_000_000)
+        return String(repeating: "0", count: max(0, 9 - s.count)) + s
+    }
+}
+
 /// Signature transcript encoding (PROTOCOL.md §3):
 /// `UTF8(label) || 0x00 || Σ(u32be(len(f)) || f)`.
 public enum TBS {

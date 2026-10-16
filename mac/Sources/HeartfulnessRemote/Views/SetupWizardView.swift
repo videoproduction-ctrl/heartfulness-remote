@@ -144,7 +144,7 @@ struct SetupWizardView: View {
         case .notifications: return model.notificationsAllowed == true
         case .firewall: return model.firewall.fullyProtected
         case .launchAtLogin: return model.launchAtLoginEnabled
-        case .pairPhone: return model.state.claimed
+        case .pairPhone: return model.state.account == .inAccount
         default: return true
         }
     }
@@ -466,14 +466,24 @@ private struct LaunchAtLoginStep: View {
     }
 }
 
+/// Unclaimed server → pair the first phone (creates the passkey). Claimed server, but this Mac
+/// isn't in the account → "Add this Mac to your account" (QR code or Mac ID + code). In the
+/// account → done.
 private struct PairPhoneStep: View {
     @EnvironmentObject var model: AppModel
 
+    private var connected: Bool { model.agentRunning && model.state.server == .online }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            StepTitle(title: "Pair your phone",
-                      subtitle: "Your phone becomes the key to this Mac: it signs in with a passkey (Face ID, Touch ID or fingerprint — no password) and can approve your other devices.",
-                      symbol: "iphone")
+            if model.state.account == .notInAccount && !model.settings.serverURL.isEmpty {
+                StepTitle(title: AccountText.addTitle, subtitle: AccountText.addSubtitle,
+                          symbol: "laptopcomputer.and.iphone")
+            } else {
+                StepTitle(title: "Pair your phone",
+                          subtitle: "Your phone becomes the key to this Mac: it signs in with a passkey (Face ID, Touch ID or fingerprint — no password) and can approve your other devices.",
+                          symbol: "iphone")
+            }
             content
         }
     }
@@ -482,22 +492,31 @@ private struct PairPhoneStep: View {
         if model.settings.serverURL.isEmpty {
             Text("First type your server address (go back one step).")
                 .foregroundStyle(.secondary)
-        } else if !model.agentRunning || model.state.server != .online {
+        } else if !connected {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     StatusHeader(summary: model.summary)
-                    Text("The pairing code appears here as soon as this Mac is connected to your server.")
+                    Text("The code appears here as soon as this Mac is connected to your server.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .padding(6)
             }
-        } else if model.state.claimed {
+        } else if model.state.account == .inAccount {
             VStack(alignment: .leading, spacing: 10) {
-                DoneBadge(done: true, doneText: "Your phone is paired", pendingText: "")
-                Text("Your server has its owner. To add another phone or computer later, open \(model.serverDisplayName) on it, sign in, and approve it on this Mac or on your phone.")
+                DoneBadge(done: true, doneText: "This Mac is in your account", pendingText: "")
+                if let line = model.macIDLine {
+                    MacIDLabel(line: line)
+                }
+                Text(AccountText.inAccountDetail(serverName: model.serverDisplayName))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if model.state.account == .notInAccount {
+            if let image = model.joinQRCode(), let code = model.state.joinCode {
+                JoinMacPanel(qrImage: image, macID: model.macIDText, joinCode: code)
+            } else {
+                preparing
             }
         } else if let image = model.setupQRCode() {
             HStack(alignment: .top, spacing: 22) {
@@ -523,14 +542,18 @@ private struct PairPhoneStep: View {
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Preparing a pairing code…")
-                }
-                Button("Make a New Pairing Code") { model.newSetupCode() }
+            preparing
+        }
+    }
+
+    private var preparing: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Preparing a code…")
             }
+            Button("Make a New Code") { model.newSetupCode() }
         }
     }
 }
@@ -546,7 +569,7 @@ private struct DoneStep: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     summaryRow("Server", ok: model.state.server == .online)
-                    summaryRow("Phone paired", ok: model.state.claimed)
+                    summaryRow("In your account", ok: model.state.account == .inAccount)
                     summaryRow("Screen Recording", ok: model.screenRecordingAllowed)
                     summaryRow("Mouse and keyboard control", ok: model.accessibilityAllowed)
                     summaryRow("Firewall and stealth mode", ok: model.firewall.fullyProtected)

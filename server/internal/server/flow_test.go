@@ -17,9 +17,10 @@ import (
 	"github.com/videoproduction-ctrl/heartfulness-remote/server/internal/store"
 )
 
-func (e *testEnv) status(pub string) string {
+// status is a device's approval status on one Mac.
+func (e *testEnv) status(pub, hostPub string) string {
 	var s string
-	e.st.View(func(st *store.State) { s = st.DeviceStatus(pub) })
+	e.st.View(func(st *store.State) { s = st.ApprovalStatus(pub, hostPub) })
 	return s
 }
 
@@ -34,7 +35,7 @@ func TestHostAuth(t *testing.T) {
 
 	good := newFakeHost(t)
 	r := good.connect(e, "203.0.113.1", testOrigin, true)
-	if r["type"] != "host-ready" || r["claimed"] != false || r["origin"] != testOrigin {
+	if r["type"] != "host-ready" || r["claimed"] != false || r["joined"] != false || r["origin"] != testOrigin || r["macId"] != proto.MacID(good.pub) {
 		t.Fatalf("good host: %v", r)
 	}
 	if ice := r["iceServers"].([]any); len(ice) != 2 {
@@ -101,30 +102,51 @@ func TestHostAuthPinnedKey(t *testing.T) {
 	if r.code != http.StatusForbidden {
 		t.Fatalf("setup for unpinned key: %d", r.code)
 	}
+
+	// HR_HOST_PUBKEY is a comma-separated allow-list (§10.2).
+	second := newFakeHost(t)
+	e2 := newEnv(t, map[string]string{"HR_HOST_PUBKEY": pinned.pubB64 + "," + second.pubB64})
+	for i, h := range []*fakeHost{pinned, second} {
+		if r := h.again().connect(e2, "203.0.113.1"+strconv.Itoa(i), testOrigin, true); r["type"] != "host-ready" {
+			t.Fatalf("allowed host %d: %v", i, r)
+		}
+	}
+	if r := intruder.connect(e2, "203.0.113.19", testOrigin, true); r["code"] != "host-not-allowed" {
+		t.Fatalf("host outside the allow-list: %v", r)
+	}
 }
 
 func TestHostAuthAfterClaim(t *testing.T) {
 	e := newEnv(t, nil)
 	h, phone, _, phoneDev := e.claim()
 
-	second := newFakeHost(t)
-	if r := second.connect(e, "203.0.113.50", testOrigin, true); r["code"] != "already-claimed" {
+	// Another Mac on a claimed server waits to join (§10.2) instead of being refused.
+	second := newJoinHost(t, "Edit Mac")
+	if r := second.connect(e, "203.0.113.50", testOrigin, true); r["type"] != "host-ready" || r["claimed"] != true || r["joined"] != false || r["macId"] != second.macID() {
 		t.Fatalf("second host after claim: %v", r)
 	}
-	second.expectClosed()
+	// It is not bound: host messages other than claim-commit / a join answer are refused.
+	second.send(map[string]any{"type": "host-status", "state": "available"})
+	second.expectError("not-bound")
+	second.send(map[string]any{"type": "device-approved", "cert": second.cert(phoneDev.pub, "Phone", "phone"), "hostMac": proto.B64(randBytes(32))})
+	second.expectError("not-bound")
+	if _, ok := e.srv.hub.hostInfo(second.pubB64); ok {
+		t.Fatal("waiting Mac listed as bound")
+	}
+	if hosts := phone.get("/api/me").json(t)["hosts"].([]any); len(hosts) != 1 {
+		t.Fatalf("waiting Mac in /api/me: %v", hosts)
+	}
 
 	// The bound Mac reconnecting replaces its old connection.
-	again := &fakeHost{pub: h.pub, priv: h.priv, pubB64: h.pubB64, certsOK: map[string]proto.Cert{}}
-	if r := again.connect(e, "203.0.113.1", testOrigin, false); r["type"] != "host-ready" || r["claimed"] != true {
+	again := h.again()
+	if r := again.connect(e, "203.0.113.1", testOrigin, false); r["type"] != "host-ready" || r["claimed"] != true || r["joined"] != true {
 		t.Fatalf("reconnect: %v", r)
 	}
 	h.expectError("replaced")
 	h.expectClosed()
-	if info := e.srv.hub.hostInfo(); !info.Online || info.Name != "Studio Mac" {
+	if info, ok := e.srv.hub.hostInfo(h.pubB64); !ok || !info.Online || info.Name != "Studio Mac" || info.MacID != h.macID() {
 		t.Fatalf("host info: %+v", info)
 	}
-	_ = phone
-	_ = phoneDev
 }
 
 func TestHostIdleProtocol(t *testing.T) {
@@ -194,15 +216,23 @@ func TestClaimFlowAndAfter(t *testing.T) {
 	if e.client("198.51.100.2").get("/api/status").json(t)["claimed"] != true {
 		t.Fatal("status not claimed")
 	}
-	// /api/me shows the host, the approved phone and the passkey.
+	// /api/me shows the Mac, the approved phone and the passkey (§10.4).
 	me := phone.get("/api/me").json(t)
-	host := me["host"].(map[string]any)
-	if host["pub"] != h.pubB64 || host["online"] != true || host["state"] != "available" || host["name"] != "Studio Mac" {
-		t.Fatalf("me.host: %v", host)
+	hosts := me["hosts"].([]any)
+	if len(hosts) != 1 {
+		t.Fatalf("me.hosts: %v", hosts)
+	}
+	host := hosts[0].(map[string]any)
+	if host["pub"] != h.pubB64 || host["macId"] != h.macID() || host["online"] != true || host["state"] != "available" ||
+		host["name"] != "Studio Mac" || host["sessionDeviceName"] != "" || host["claimedAt"].(float64) == 0 || host["lastSeen"].(float64) == 0 {
+		t.Fatalf("me.hosts[0]: %v", host)
 	}
 	devs := me["devices"].([]any)
-	if len(devs) != 1 || devs[0].(map[string]any)["status"] != "approved" || devs[0].(map[string]any)["pub"] != phoneDev.pubB64() {
+	if len(devs) != 1 || devs[0].(map[string]any)["pub"] != phoneDev.pubB64() || devs[0].(map[string]any)["name"] != "Phone" || devs[0].(map[string]any)["kind"] != "phone" {
 		t.Fatalf("me.devices: %v", devs)
+	}
+	if ap := devs[0].(map[string]any)["approvals"].([]any); len(ap) != 1 || ap[0].(map[string]any)["hostPub"] != h.pubB64 || ap[0].(map[string]any)["status"] != "approved" {
+		t.Fatalf("me.devices[0].approvals: %v", ap)
 	}
 	if pk := me["passkeys"].([]any); len(pk) != 1 || pk[0].(map[string]any)["id"] != b64u.EncodeToString(authn.credID) {
 		t.Fatalf("me.passkeys: %v", pk)
@@ -355,25 +385,34 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	laptopClient := e.login(authn, "198.51.100.70")
 	laptop := newDevice("Laptop")
 	ready := laptop.connect(e, laptopClient, "")
-	if ready["device"].(map[string]any)["status"] != "unknown" || ready["host"].(map[string]any)["online"] != true {
+	rh := ready["hosts"].([]any)[0].(map[string]any)
+	if rh["deviceStatus"] != "unknown" || rh["online"] != true || rh["pub"] != h.pubB64 || rh["macId"] != h.macID() || rh["cert"] != nil {
 		t.Fatalf("laptop ready: %v", ready)
 	}
 
 	// Unapproved devices cannot start sessions, approve, revoke or kill.
-	laptop.send(map[string]any{"type": "session-request", "sessionId": proto.B64(randBytes(16)), "devicePub": phone.pubB64(), "clientNonce": proto.B64(randBytes(32))})
+	laptop.send(map[string]any{"type": "session-request", "hostPub": h.pubB64, "sessionId": proto.B64(randBytes(16)), "devicePub": phone.pubB64(), "clientNonce": proto.B64(randBytes(32))})
 	laptop.expectError("not-approved")
-	laptop.send(map[string]any{"type": "pair-approve", "requestId": "x", "approverPub": phone.pubB64(), "sig": proto.B64(randBytes(64))})
+	laptop.send(map[string]any{"type": "pair-approve", "hostPub": h.pubB64, "requestId": "x", "approverPub": phone.pubB64(), "sig": proto.B64(randBytes(64))})
 	laptop.expectError("not-approved")
-	laptop.send(map[string]any{"type": "kill-request", "action": "kill", "ts": time.Now().Unix(), "sig": proto.B64(randBytes(64))})
+	laptop.send(map[string]any{"type": "kill-request", "hostPub": h.pubB64, "action": "kill", "ts": time.Now().Unix(), "sig": proto.B64(randBytes(64))})
 	laptop.expectError("not-approved")
+	// Messages that target a Mac must name a bound one.
+	laptop.send(map[string]any{"type": "session-request", "sessionId": proto.B64(randBytes(16)), "clientNonce": proto.B64(randBytes(32))})
+	laptop.expectError("bad-request")
+	laptop.send(map[string]any{"type": "pair-start", "hostPub": newFakeHost(t).pubB64, "name": "Laptop", "kind": "browser", "commit": proto.B64(randBytes(32))})
+	laptop.expectError("unknown-host")
 	h.expectNone(100 * time.Millisecond)
 
 	// Commit-then-reveal pairing.
 	nd := randBytes(32)
 	commit := proto.PairCommit(laptop.pub, nd)
-	laptop.send(map[string]any{"type": "pair-start", "name": "Laptop", "kind": "browser", "commit": proto.B64(commit)})
+	laptop.send(map[string]any{"type": "pair-start", "hostPub": h.pubB64, "name": "Laptop", "kind": "browser", "commit": proto.B64(commit)})
 	pend := laptop.expect("pair-pending")
 	reqID := str(pend, "requestId")
+	if pend["hostPub"] != h.pubB64 {
+		t.Fatalf("pair-pending: %v", pend)
+	}
 	pr := h.expect("pair-request")
 	if str(pr, "requestId") != reqID || str(pr, "devicePub") != "" || str(pr, "commit") != proto.B64(commit) || str(pr, "name") != "Laptop" {
 		t.Fatalf("pair-request: %v", pr)
@@ -400,7 +439,7 @@ func TestPairingAndSessionRelay(t *testing.T) {
 		t.Fatalf("pair-reveal to host: %v", rv)
 	}
 	an := phone.expect("approval-needed")
-	if str(an, "devicePub") != laptop.pubB64() || str(an, "commit") != proto.B64(commit) || str(an, "hostSig") != proto.B64(hostSig) || str(an, "nd") != proto.B64(nd) || str(an, "na") != proto.B64(na) {
+	if str(an, "devicePub") != laptop.pubB64() || str(an, "commit") != proto.B64(commit) || str(an, "hostSig") != proto.B64(hostSig) || str(an, "nd") != proto.B64(nd) || str(an, "na") != proto.B64(na) || an["hostPub"] != h.pubB64 {
 		t.Fatalf("approval-needed: %v", an)
 	}
 	// Both sides compute the same SAS.
@@ -408,17 +447,17 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	if sasPhone != proto.SAS(h.pub, laptop.pub, nd, na) {
 		t.Fatal("SAS mismatch")
 	}
-	if e.status(laptop.pubB64()) != store.StatusPending {
+	if e.status(laptop.pubB64(), h.pubB64) != store.StatusPending {
 		t.Fatal("revealed device should be pending")
 	}
 	// The unapproved laptop never receives approval requests.
 	laptop.expectNone(50 * time.Millisecond)
 
 	// A forged approval signature is rejected by the server.
-	phone.send(map[string]any{"type": "pair-approve", "requestId": reqID, "approverPub": phone.pubB64(), "sig": proto.B64(randBytes(64))})
+	phone.send(map[string]any{"type": "pair-approve", "hostPub": h.pubB64, "requestId": reqID, "approverPub": phone.pubB64(), "sig": proto.B64(randBytes(64))})
 	phone.expectError("bad-signature")
 	approveSig := proto.Sign(phone.priv, proto.LabelPairApprove, reqRaw, h.pub, laptop.pub, nd, na, proto.Str("Laptop"), proto.Str("browser"))
-	phone.send(map[string]any{"type": "pair-approve", "requestId": reqID, "approverPub": laptop.pubB64(), "sig": proto.B64(approveSig)})
+	phone.send(map[string]any{"type": "pair-approve", "hostPub": h.pubB64, "requestId": reqID, "approverPub": laptop.pubB64(), "sig": proto.B64(approveSig)})
 	ap := h.expect("pair-approve")
 	if str(ap, "approverPub") != phone.pubB64() || str(ap, "sig") != proto.B64(approveSig) {
 		t.Fatalf("pair-approve to host: %v", ap)
@@ -432,7 +471,7 @@ func TestPairingAndSessionRelay(t *testing.T) {
 		t.Fatalf("pair-denied: %v", d)
 	}
 	phone.expect("approval-closed")
-	if e.status(laptop.pubB64()) == store.StatusApproved {
+	if e.status(laptop.pubB64(), h.pubB64) == store.StatusApproved {
 		t.Fatal("device approved with a wrong cert")
 	}
 
@@ -442,13 +481,13 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	cert := h.cert(laptop.pub, "Laptop", "browser")
 	h.send(map[string]any{"type": "pair-result", "requestId": reqID, "approved": true, "cert": cert})
 	pa := laptop.expect("pair-approved")
-	if pa["cert"].(map[string]any)["sig"] != cert.Sig {
+	if pa["cert"].(map[string]any)["sig"] != cert.Sig || pa["hostPub"] != h.pubB64 {
 		t.Fatalf("pair-approved: %v", pa)
 	}
-	if c := phone.expect("approval-closed"); str(c, "requestId") != reqID {
+	if c := phone.expect("approval-closed"); str(c, "requestId") != reqID || c["hostPub"] != h.pubB64 {
 		t.Fatalf("approval-closed: %v", c)
 	}
-	if e.status(laptop.pubB64()) != store.StatusApproved {
+	if e.status(laptop.pubB64(), h.pubB64) != store.StatusApproved {
 		t.Fatal("laptop not approved")
 	}
 	_ = nd
@@ -456,7 +495,7 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	// Session relay: the server overwrites devicePub with the authenticated key.
 	sid := proto.B64(randBytes(16))
 	cn := proto.B64(randBytes(32))
-	laptop.send(map[string]any{"type": "session-request", "sessionId": sid, "devicePub": phone.pubB64(), "clientNonce": cn, "relayOnly": true})
+	laptop.send(map[string]any{"type": "session-request", "hostPub": h.pubB64, "sessionId": sid, "devicePub": phone.pubB64(), "clientNonce": cn, "relayOnly": true})
 	sr := h.expect("session-request")
 	if str(sr, "devicePub") != laptop.pubB64() || str(sr, "sessionId") != sid || str(sr, "clientNonce") != cn || sr["relayOnly"] != true {
 		t.Fatalf("session-request: %v", sr)
@@ -466,7 +505,7 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	laptop.expectError("bad-request")
 	hn := proto.B64(randBytes(32))
 	h.send(map[string]any{"type": "session-accept", "sessionId": sid, "hostNonce": hn})
-	if acc := laptop.expect("session-accept"); str(acc, "hostNonce") != hn {
+	if acc := laptop.expect("session-accept"); str(acc, "hostNonce") != hn || acc["hostPub"] != h.pubB64 {
 		t.Fatalf("session-accept: %v", acc)
 	}
 	offerSig := proto.B64(randBytes(64))
@@ -480,7 +519,7 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	phone.expectError("unknown-session")
 	ansSig := proto.B64(randBytes(64))
 	h.send(map[string]any{"type": "answer", "sessionId": sid, "sdp": "v=0 answer", "sig": ansSig})
-	if an := laptop.expect("answer"); str(an, "sdp") != "v=0 answer" || str(an, "sig") != ansSig {
+	if an := laptop.expect("answer"); str(an, "sdp") != "v=0 answer" || str(an, "sig") != ansSig || an["hostPub"] != h.pubB64 {
 		t.Fatalf("answer: %v", an)
 	}
 	laptop.send(map[string]any{"type": "ice", "sessionId": sid, "candidate": map[string]any{"candidate": "candidate:1 1 udp 1 192.0.2.1 5000 typ host", "sdpMid": "0"}})
@@ -488,14 +527,19 @@ func TestPairingAndSessionRelay(t *testing.T) {
 		t.Fatalf("ice to host: %v", ic)
 	}
 	h.send(map[string]any{"type": "ice", "sessionId": sid, "candidate": nil})
-	if ic := laptop.expect("ice"); ic["candidate"] != nil {
+	if ic := laptop.expect("ice"); ic["candidate"] != nil || ic["hostPub"] != h.pubB64 {
 		t.Fatalf("end-of-candidates: %v", ic)
 	}
 	h.send(map[string]any{"type": "host-status", "state": "in-session", "sessionDeviceName": "Laptop"})
-	if hs := phone.expect("host-status"); hs["state"] != "in-session" || hs["sessionDeviceName"] != "Laptop" || hs["online"] != true {
+	waitFor(t, func() bool { info, _ := e.srv.hub.hostInfo(h.pubB64); return info.State == "in-session" })
+	var hs map[string]any
+	for hs == nil || hs["state"] != "in-session" {
+		hs = phone.expect("host-status")
+	}
+	if hs["sessionDeviceName"] != "Laptop" || hs["online"] != true || hs["hostPub"] != h.pubB64 {
 		t.Fatalf("host-status: %v", hs)
 	}
-	laptop.send(map[string]any{"type": "session-end", "sessionId": sid, "reason": "user"})
+	laptop.send(map[string]any{"type": "session-end", "sessionId": sid, "hostPub": h.pubB64, "reason": "user"})
 	if se := h.expect("session-end"); se["reason"] != "user" {
 		t.Fatalf("session-end: %v", se)
 	}
@@ -505,15 +549,15 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	// Kill/revoke requests from an approved device are verified and relayed.
 	ts := time.Now().Unix()
 	killSig := proto.Sign(phone.priv, proto.LabelKillRequest, h.pub, proto.Str("kill"), proto.Int(ts))
-	phone.send(map[string]any{"type": "kill-request", "action": "kill", "ts": ts, "approverPub": laptop.pubB64(), "sig": proto.B64(killSig)})
+	phone.send(map[string]any{"type": "kill-request", "hostPub": h.pubB64, "action": "kill", "ts": ts, "approverPub": laptop.pubB64(), "sig": proto.B64(killSig)})
 	if kr := h.expect("kill-request"); str(kr, "approverPub") != phone.pubB64() || kr["action"] != "kill" {
 		t.Fatalf("kill-request: %v", kr)
 	}
 	stale := time.Now().Add(-time.Hour).Unix()
-	phone.send(map[string]any{"type": "kill-request", "action": "kill", "ts": stale, "sig": proto.B64(proto.Sign(phone.priv, proto.LabelKillRequest, h.pub, proto.Str("kill"), proto.Int(stale)))})
+	phone.send(map[string]any{"type": "kill-request", "hostPub": h.pubB64, "action": "kill", "ts": stale, "sig": proto.B64(proto.Sign(phone.priv, proto.LabelKillRequest, h.pub, proto.Str("kill"), proto.Int(stale)))})
 	phone.expectError("stale")
 	revSig := proto.Sign(phone.priv, proto.LabelRevokeRequest, h.pub, laptop.pub, proto.Int(ts))
-	phone.send(map[string]any{"type": "revoke-request", "targetPub": laptop.pubB64(), "ts": ts, "sig": proto.B64(revSig)})
+	phone.send(map[string]any{"type": "revoke-request", "hostPub": h.pubB64, "targetPub": laptop.pubB64(), "ts": ts, "sig": proto.B64(revSig)})
 	if rr := h.expect("revoke-request"); str(rr, "targetPub") != laptop.pubB64() || str(rr, "approverPub") != phone.pubB64() {
 		t.Fatalf("revoke-request: %v", rr)
 	}
@@ -522,11 +566,11 @@ func TestPairingAndSessionRelay(t *testing.T) {
 	// laptop (approved earlier) becomes revoked; a forged cert is ignored.
 	forged := proto.SignCert(newFakeHost(t).priv, proto.Cert{HostPub: h.pubB64, DevicePub: stranger.pubB64(), Name: "x", Kind: "browser", IssuedAt: 1})
 	h.send(map[string]any{"type": "trust-sync", "certs": []proto.Cert{h.certsOK[phone.pubB64()], forged}, "revocations": []proto.Revocation{}})
-	waitFor(t, func() bool { return e.status(laptop.pubB64()) == store.StatusRevoked })
-	if e.status(phone.pubB64()) != store.StatusApproved || e.status(stranger.pubB64()) != store.StatusUnknown {
-		t.Fatalf("trust-sync statuses: phone=%s stranger=%s", e.status(phone.pubB64()), e.status(stranger.pubB64()))
+	waitFor(t, func() bool { return e.status(laptop.pubB64(), h.pubB64) == store.StatusRevoked })
+	if e.status(phone.pubB64(), h.pubB64) != store.StatusApproved || e.status(stranger.pubB64(), h.pubB64) != store.StatusUnknown {
+		t.Fatalf("trust-sync statuses: phone=%s stranger=%s", e.status(phone.pubB64(), h.pubB64), e.status(stranger.pubB64(), h.pubB64))
 	}
-	laptop.send(map[string]any{"type": "session-request", "sessionId": proto.B64(randBytes(16)), "clientNonce": proto.B64(randBytes(32))})
+	laptop.send(map[string]any{"type": "session-request", "hostPub": h.pubB64, "sessionId": proto.B64(randBytes(16)), "clientNonce": proto.B64(randBytes(32))})
 	laptop.expectError("not-approved")
 }
 
@@ -535,7 +579,7 @@ func pairOnce(t *testing.T, h *fakeHost, dev, approver *device) (string, []byte,
 	t.Helper()
 	nd := randBytes(32)
 	commit := proto.PairCommit(dev.pub, nd)
-	dev.send(map[string]any{"type": "pair-start", "name": dev.name, "kind": dev.kind, "commit": proto.B64(commit)})
+	dev.send(map[string]any{"type": "pair-start", "hostPub": h.pubB64, "name": dev.name, "kind": dev.kind, "commit": proto.B64(commit)})
 	reqID := str(dev.expect("pair-pending"), "requestId")
 	h.expect("pair-request")
 	na := randBytes(32)
@@ -568,22 +612,22 @@ func TestPairDenyAndHostOffline(t *testing.T) {
 	tablet := newDevice("Tablet")
 	tablet.connect(e, c, "")
 	reqID, _, _ := pairOnce(t, h, tablet, phone)
-	phone.send(map[string]any{"type": "pair-deny", "requestId": reqID})
+	phone.send(map[string]any{"type": "pair-deny", "hostPub": h.pubB64, "requestId": reqID})
 	if d := h.expect("pair-deny"); str(d, "requestId") != reqID {
 		t.Fatalf("pair-deny: %v", d)
 	}
 	h.send(map[string]any{"type": "pair-result", "requestId": reqID, "approved": false, "reason": "denied"})
-	if d := tablet.expect("pair-denied"); d["reason"] != "denied" {
+	if d := tablet.expect("pair-denied"); d["reason"] != "denied" || d["hostPub"] != h.pubB64 {
 		t.Fatalf("pair-denied: %v", d)
 	}
 	phone.expect("approval-closed")
-	if e.status(tablet.pubB64()) != store.StatusUnknown {
+	if e.status(tablet.pubB64(), h.pubB64) != store.StatusUnknown {
 		t.Fatal("denied device kept")
 	}
 
 	// A mismatching reveal is forwarded to the host but never shown to approvers.
 	nd := randBytes(32)
-	tablet.send(map[string]any{"type": "pair-start", "name": "Tablet", "kind": "browser", "commit": proto.B64(proto.PairCommit(tablet.pub, nd))})
+	tablet.send(map[string]any{"type": "pair-start", "hostPub": h.pubB64, "name": "Tablet", "kind": "browser", "commit": proto.B64(proto.PairCommit(tablet.pub, nd))})
 	reqID = str(tablet.expect("pair-pending"), "requestId")
 	h.expect("pair-request")
 	na := randBytes(32)
@@ -599,11 +643,11 @@ func TestPairDenyAndHostOffline(t *testing.T) {
 	if d := tablet.expect("pair-denied"); d["reason"] != "host-offline" {
 		t.Fatalf("pair-denied on host loss: %v", d)
 	}
-	waitFor(t, func() bool { return !e.srv.hub.hostInfo().Online })
-	if st := e.srv.hub.hostInfo().State; st != "offline" {
-		t.Fatalf("offline state %q", st)
+	waitFor(t, func() bool { info, _ := e.srv.hub.hostInfo(h.pubB64); return !info.Online })
+	if info, _ := e.srv.hub.hostInfo(h.pubB64); info.State != "offline" {
+		t.Fatalf("offline state %q", info.State)
 	}
-	tablet.send(map[string]any{"type": "pair-start", "name": "Tablet", "kind": "browser", "commit": proto.B64(randBytes(32))})
+	tablet.send(map[string]any{"type": "pair-start", "hostPub": h.pubB64, "name": "Tablet", "kind": "browser", "commit": proto.B64(randBytes(32))})
 	tablet.expectError("host-offline")
 }
 
@@ -616,7 +660,7 @@ func TestDeviceRevokedMessage(t *testing.T) {
 	h.expectError("bad-revocation")
 	rev.Sig = proto.B64(proto.Sign(h.priv, proto.LabelRevoked, h.pub, phone.pub, proto.Int(rev.RevokedAt)))
 	h.send(map[string]any{"type": "device-revoked", "revocation": rev})
-	waitFor(t, func() bool { return e.status(phone.pubB64()) == store.StatusRevoked })
+	waitFor(t, func() bool { return e.status(phone.pubB64(), h.pubB64) == store.StatusRevoked })
 	phone.expect("devices-changed")
 }
 
@@ -683,7 +727,7 @@ func TestLinkFlow(t *testing.T) {
 	// WebSocket with the bearer token from the Tauri origin.
 	tauriDev := newDevice("Windows laptop")
 	ready := tauriDev.connect(e, &client{e: e, ip: app.ip, origin: tauri}, tok)
-	if ready["device"].(map[string]any)["status"] != "unknown" {
+	if ready["hosts"].([]any)[0].(map[string]any)["deviceStatus"] != "unknown" {
 		t.Fatalf("tauri ready: %v", ready)
 	}
 	// Bearer session expiry is 30 days.
@@ -817,7 +861,8 @@ func TestPurgeJob(t *testing.T) {
 			{Time: now.Add(-8 * 24 * time.Hour), Type: "login", IP: "198.51.100.1"},
 			{Time: now.Add(-time.Hour), Type: "login", IP: "198.51.100.2"},
 		}
-		st.Devices["old"] = &store.Device{Pub: "old", Status: store.StatusPending, CreatedAt: now.Add(-25 * time.Hour)}
+		st.Devices["old"] = &store.Device{Pub: "old", CreatedAt: now.Add(-25 * time.Hour),
+			Approvals: map[string]*store.Approval{"h": {Status: store.StatusPending, CreatedAt: now.Add(-25 * time.Hour)}}}
 		st.Sessions["x"] = &store.Session{Hash: "x", Kind: store.KindCookie, LastUsed: now.Add(-13 * time.Hour), Expires: now.Add(time.Hour)}
 		return nil
 	})
@@ -892,7 +937,7 @@ func TestClientWSTauriOrigins(t *testing.T) {
 	for i, origin := range config.TauriOrigins {
 		d := newDevice("Native " + origin)
 		ready := d.connect(e, &client{e: e, ip: "198.51.100." + strconv.Itoa(121+i), origin: origin}, tok)
-		if ready["device"].(map[string]any)["status"] != store.StatusUnknown {
+		if ready["hosts"].([]any)[0].(map[string]any)["deviceStatus"] != store.StatusUnknown {
 			t.Fatalf("%s: ready %v", origin, ready)
 		}
 	}

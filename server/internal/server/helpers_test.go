@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -84,6 +85,7 @@ func newEnv(t *testing.T, extra map[string]string, tweak ...func(*Server)) *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir = cfg.DataDir
 	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +192,14 @@ func (c *client) do(method, path string, body any, mod ...func(*http.Request)) r
 func (c *client) post(path string, body any) resp { return c.do(http.MethodPost, path, body) }
 func (c *client) get(path string) resp            { return c.do(http.MethodGet, path, nil) }
 
+// from returns the same signed-in client seen from another IP (keeps tests
+// within the per-IP auth rate limit).
+func (c *client) from(ip string) *client {
+	cc := *c
+	cc.ip = ip
+	return &cc
+}
+
 // ---- WebSocket peers ----
 
 type peer struct {
@@ -236,7 +246,7 @@ func (p *peer) send(v any) {
 }
 
 // background messages that may interleave with anything.
-var noise = map[string]bool{"host-status": true, "devices-changed": true, "turn": true}
+var noise = map[string]bool{"host-status": true, "devices-changed": true, "hosts-changed": true, "turn": true}
 
 // expect waits for a message of the given type, skipping broadcast noise.
 // Any other unexpected message fails the test.
@@ -316,17 +326,36 @@ type fakeHost struct {
 	commit  []byte
 	setupT  []byte
 	pubB64  string
+	name    string
 	certsOK map[string]proto.Cert
 }
 
-func newFakeHost(t *testing.T) *fakeHost {
+func newFakeHost(t *testing.T) *fakeHost { return newFakeHostT(t, randBytes(32)) }
+
+// newJoinHost is a Mac that joins a claimed server: its secret T is the
+// 10-byte join secret shown as a join code (PROTOCOL.md §10.2).
+func newJoinHost(t *testing.T, name string) *fakeHost {
+	h := newFakeHostT(t, randBytes(proto.JoinSecretSize))
+	h.name = name
+	return h
+}
+
+func newFakeHostT(t *testing.T, tt []byte) *fakeHost {
 	pub, priv, _ := ed25519.GenerateKey(nil)
-	tt := randBytes(32)
 	kc, ka, err := proto.SetupKeys(tt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fakeHost{pub: pub, priv: priv, kc: kc, ka: ka, commit: proto.ClaimCommit(kc), setupT: tt, pubB64: proto.B64(pub), certsOK: map[string]proto.Cert{}}
+	return &fakeHost{pub: pub, priv: priv, kc: kc, ka: ka, commit: proto.ClaimCommit(kc), setupT: tt, pubB64: proto.B64(pub), name: "Studio Mac", certsOK: map[string]proto.Cert{}}
+}
+
+func (h *fakeHost) macID() string { return proto.MacID(h.pub) }
+
+// again returns a second connection object for the same Mac key.
+func (h *fakeHost) again() *fakeHost {
+	c := *h
+	c.peer = nil
+	return &c
 }
 
 // connect dials /ws/host and authenticates; returns the first reply
@@ -342,7 +371,7 @@ func (h *fakeHost) connect(e *testEnv, ip, signOrigin string, withCommit bool) m
 	ch := p.expect("challenge")
 	nonce, _ := proto.UnB64(ch["nonce"].(string))
 	sig := proto.Sign(h.priv, proto.LabelHostAuth, proto.Str(signOrigin), nonce)
-	m := map[string]any{"type": "host-auth", "hostPub": h.pubB64, "name": "Studio Mac", "version": "test", "sig": proto.B64(sig)}
+	m := map[string]any{"type": "host-auth", "hostPub": h.pubB64, "name": h.name, "version": "test", "sig": proto.B64(sig)}
 	if withCommit {
 		m["claimCommit"] = proto.B64(h.commit)
 	}
@@ -363,6 +392,22 @@ func (h *fakeHost) cert(devPub []byte, name, kind string) proto.Cert {
 	c := proto.SignCert(h.priv, proto.Cert{HostPub: h.pubB64, DevicePub: proto.B64(devPub), Name: name, Kind: kind, IssuedAt: time.Now().Unix()})
 	h.certsOK[c.DevicePub] = c
 	return c
+}
+
+// answerSetup behaves like the real Mac on setup-device: it verifies the
+// setup MAC with its Ka (real crypto), pins the device, and answers
+// device-approved {cert, hostMac}.
+func (h *fakeHost) answerSetup(t *testing.T) (proto.Cert, []byte) {
+	t.Helper()
+	sd := h.expect("setup-device")
+	devPub := mustB64(t, str(sd, "devicePub"))
+	if !proto.CheckSetupMAC(h.ka, h.pub, devPub, str(sd, "name"), str(sd, "kind"), mustB64(t, str(sd, "setupMac"))) {
+		t.Fatalf("setup-device with a bad setup MAC: %v", sd)
+	}
+	ct := h.cert(devPub, str(sd, "name"), str(sd, "kind"))
+	hostMac := proto.HostConfirmMAC(h.ka, h.pub, devPub)
+	h.send(map[string]any{"type": "device-approved", "cert": ct, "hostMac": proto.B64(hostMac)})
+	return ct, hostMac
 }
 
 // ---- fake client device ----
@@ -433,7 +478,7 @@ func (e *testEnv) claim() (*fakeHost, *client, *softAuthn, *device) {
 	t := e.t
 	t.Helper()
 	h := newFakeHost(t)
-	if r := h.connect(e, "203.0.113.1", e.cfg.Origin, true); r["type"] != "host-ready" || r["claimed"] != false {
+	if r := h.connect(e, "203.0.113.1", e.cfg.Origin, true); r["type"] != "host-ready" || r["claimed"] != false || r["joined"] != false || r["macId"] != h.macID() {
 		t.Fatalf("host-ready: %v", r)
 	}
 	phone := e.client("198.51.100.10")
@@ -456,23 +501,115 @@ func (e *testEnv) claim() (*fakeHost, *client, *softAuthn, *device) {
 	if r.code != 200 || phone.cookie == "" {
 		t.Fatalf("setup/finish: %d %s", r.code, r.body)
 	}
-	if hr := h.expect("host-ready"); hr["claimed"] != true {
+	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true || hr["macId"] != h.macID() {
 		t.Fatalf("host-ready after claim: %v", hr)
 	}
-	sd := h.expect("setup-device")
-	if str(sd, "devicePub") != dev.pubB64() || !proto.CheckSetupMAC(h.ka, h.pub, dev.pub, str(sd, "name"), str(sd, "kind"), mustB64(t, str(sd, "setupMac"))) {
-		t.Fatalf("setup-device: %v", sd)
-	}
 	ready := dev.connect(e, phone, "")
-	if ready["device"].(map[string]any)["status"] != store.StatusPending {
-		t.Fatalf("phone status before approval: %v", ready)
+	if hosts := ready["hosts"].([]any); len(hosts) != 1 || hosts[0].(map[string]any)["deviceStatus"] != store.StatusPending ||
+		ready["device"].(map[string]any)["pub"] != dev.pubB64() {
+		t.Fatalf("phone ready before approval: %v", ready)
 	}
-	h.send(map[string]any{"type": "device-approved", "cert": h.cert(dev.pub, dev.name, dev.kind)})
+	ct, hostMac := h.answerSetup(t)
 	pa := dev.expect("pair-approved")
-	if pa["cert"].(map[string]any)["devicePub"] != dev.pubB64() {
+	if pa["cert"].(map[string]any)["devicePub"] != dev.pubB64() || pa["hostPub"] != h.pubB64 || pa["hostMac"] != proto.B64(hostMac) {
 		t.Fatalf("pair-approved: %v", pa)
 	}
+	// One code path for clients: the claim also ends with host-joined.
+	hj := dev.expect("host-joined")
+	if hj["hostPub"] != h.pubB64 || hj["hostMac"] != proto.B64(hostMac) || hj["cert"].(map[string]any)["sig"] != ct.Sig {
+		t.Fatalf("host-joined after claim: %v", hj)
+	}
 	return h, phone, authn, dev
+}
+
+// proofQuery is a device proof as URL query parameters (for GET endpoints).
+func proofQuery(t *testing.T, c *client, d *device) string {
+	t.Helper()
+	p := deviceProofFor(t, c, d)
+	q := url.Values{}
+	for k, v := range p {
+		q.Set(k, v.(string))
+	}
+	return q.Encode()
+}
+
+// withProof merges a fresh device proof into a request body.
+func withProof(t *testing.T, c *client, d *device, body map[string]any) map[string]any {
+	t.Helper()
+	for k, v := range deviceProofFor(t, c, d) {
+		body[k] = v
+	}
+	return body
+}
+
+// registered returns the device's registered name and kind from /api/me
+// (what join/finish's setup MAC must cover).
+func registered(t *testing.T, c *client, d *device) (string, string) {
+	t.Helper()
+	for _, x := range c.get("/api/me").json(t)["devices"].([]any) {
+		m := x.(map[string]any)
+		if m["pub"] == d.pubB64() {
+			return str(m, "name"), str(m, "kind")
+		}
+	}
+	t.Fatalf("device %s not registered", d.name)
+	return "", ""
+}
+
+// join adds a further Mac to the account the way the web client does it
+// (§10.2, typed path): Mac ID lookup, join/begin with Kc, join/finish with
+// the setup MAC; the fake Mac verifies it with real crypto and answers; the
+// device checks the cert and hostMac in host-joined. c must be signed in as
+// the owner and d must be connected and approved on some Mac.
+func (e *testEnv) join(h *fakeHost, hostIP string, c *client, d *device) {
+	t := e.t
+	t.Helper()
+	if r := h.connect(e, hostIP, e.cfg.Origin, true); r["type"] != "host-ready" || r["claimed"] != true || r["joined"] != false || r["macId"] != h.macID() {
+		t.Fatalf("join host-ready: %v", r)
+	}
+	// What the owner types: the Mac ID and the join code.
+	typedID := proto.FormatMacID(h.macID())
+	tt, err := proto.ParseJoinCode(strings.ToLower(proto.JoinCode(h.setupT)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kc, ka, _ := proto.SetupKeys(tt)
+	r := c.get("/api/hosts/pending?macId=" + url.QueryEscape(typedID) + "&" + proofQuery(t, c, d))
+	if r.code != 200 {
+		t.Fatalf("hosts/pending: %d %s", r.code, r.body)
+	}
+	pend := r.json(t)
+	hostPub := mustB64(t, str(pend, "hostPub"))
+	if proto.MacID(hostPub) != h.macID() || str(pend, "name") != h.name {
+		t.Fatalf("pending: %v", pend)
+	}
+	r = c.post("/api/hosts/join/begin", withProof(t, c, d, map[string]any{"hostPub": proto.B64(hostPub), "claim": proto.B64(kc)}))
+	if r.code != 200 {
+		t.Fatalf("join/begin: %d %s", r.code, r.body)
+	}
+	begin := r.json(t)
+	if begin["name"] != h.name || begin["macId"] != h.macID() || str(begin, "flowId") == "" {
+		t.Fatalf("join/begin: %v", begin)
+	}
+	name, kind := registered(t, c, d)
+	r = c.post("/api/hosts/join/finish", withProof(t, c, d, map[string]any{
+		"flowId": begin["flowId"], "setupMac": proto.B64(proto.SetupMAC(ka, hostPub, d.pub, name, kind)),
+	}))
+	if r.code != 200 {
+		t.Fatalf("join/finish: %d %s", r.code, r.body)
+	}
+	h.answerSetup(t)
+	if hr := h.expect("host-ready"); hr["claimed"] != true || hr["joined"] != true {
+		t.Fatalf("host-ready after join: %v", hr)
+	}
+	hj := d.expect("host-joined")
+	var ct proto.Cert
+	b, _ := json.Marshal(hj["cert"])
+	_ = json.Unmarshal(b, &ct)
+	if hj["hostPub"] != h.pubB64 || ct.Verify(hostPub) != nil || ct.DevicePub != d.pubB64() ||
+		!proto.CheckHostConfirmMAC(ka, hostPub, d.pub, mustB64(t, str(hj, "hostMac"))) {
+		t.Fatalf("host-joined: %v", hj)
+	}
 }
 
 // login performs a passkey login from a new client.

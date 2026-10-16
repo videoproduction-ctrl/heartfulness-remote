@@ -29,7 +29,7 @@ type Config struct {
 	TurnHost       string
 	TurnPort       int
 	TrustedProxies []netip.Prefix
-	HostPubPin     []byte // optional pinned host key (32 bytes)
+	HostPubAllow   [][]byte // optional allow-list of host keys (32 bytes each); empty = any
 	WebDir         string // optional on-disk web client (instead of the embedded copy)
 	Dev            bool
 }
@@ -43,6 +43,20 @@ func (c *Config) CookieName() string {
 		return "__Host-hr_session"
 	}
 	return "hr_session"
+}
+
+// HostAllowed reports whether a host key may connect: any key when the
+// HR_HOST_PUBKEY allow-list is empty, otherwise only listed keys.
+func (c *Config) HostAllowed(pub []byte) bool {
+	if len(c.HostPubAllow) == 0 {
+		return true
+	}
+	for _, k := range c.HostPubAllow {
+		if string(k) == string(pub) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsTauriOrigin reports whether o is one of the Tauri app origins.
@@ -126,11 +140,11 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	if hp := strings.TrimSpace(getenv("HR_HOST_PUBKEY")); hp != "" {
-		b, err := proto.UnB64Len(hp, proto.PubKeySize)
+		keys, err := parseHostKeys(hp)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("HR_HOST_PUBKEY must be a base64url Ed25519 public key: %w", err))
+			errs = append(errs, fmt.Errorf("HR_HOST_PUBKEY must be a comma-separated list of base64url Ed25519 public keys: %w", err))
 		}
-		c.HostPubPin = b
+		c.HostPubAllow = keys
 	}
 
 	if c.WebDir != "" {
@@ -216,6 +230,22 @@ func rpIDMatches(rpID, host string) bool {
 		return false
 	}
 	return strings.HasSuffix(host, "."+rpID) && strings.Contains(rpID, ".")
+}
+
+// parseHostKeys parses a comma (or space) separated list of b64 host keys.
+func parseHostKeys(s string) ([][]byte, error) {
+	var out [][]byte
+	for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		b, err := proto.UnB64Len(f, proto.PubKeySize)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", f, err)
+		}
+		out = append(out, b)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no keys")
+	}
+	return out, nil
 }
 
 // ParsePrefixes parses a comma/space separated list of CIDRs or bare IPs.

@@ -1,6 +1,8 @@
 // First-time setup from the Mac's QR code (PROTOCOL.md §4):
 // derive Kc/Ka from T, create the owner passkey, create the device key,
 // prove knowledge of T with the setup MAC, then wait for the Mac to approve.
+// The Mac's confirmation may carry hostMac (§10.2 step 4, "§4 claims also
+// send hostMac now"); when it does, it is verified with Ka.
 
 import type { App, View } from "../app";
 import { ApiError, type Flow } from "../api";
@@ -8,7 +10,9 @@ import { b64 } from "../b64";
 import { cleanDeviceName, defaultDeviceName } from "../device-name";
 import { h, replace } from "../dom";
 import type { SetupFragment } from "../fragment";
-import { fingerprint, setupKeys, setupMac, verifyCert } from "../hr1";
+import { b64Field, fingerprint, setupKeys, setupMac, verifyCert, verifyHostConfirmMac } from "../hr1";
+import { aboutMac } from "../messages";
+import type { Msg } from "../signal";
 import { button, card, errorBox, errorMessage, setError, spinner } from "../ui";
 import { createPasskey, webauthnAvailable } from "../webauthn";
 import { brand, hero, page } from "./common";
@@ -23,6 +27,7 @@ export function setupView(app: App, frag: SetupFragment): View {
   let ka: Uint8Array | null = null;
   let t: Uint8Array | null = frag.t;
   const hostPub = frag.hostPub;
+  const hostPubB64 = b64(hostPub);
   let flow: Flow | null = null;
   const cleanups: Array<() => void> = [];
 
@@ -126,9 +131,11 @@ export function setupView(app: App, frag: SetupFragment): View {
         setupMac: b64(mac),
       });
       // The QR code came from the Mac's own screen: its host key is authentic.
-      await app.platform.pinHost(hostPub);
-      app.pinned = hostPub;
-      wipe();
+      await app.pinMac(hostPub, "");
+      // T and Kc are no longer needed; Ka is kept to check the Mac's hostMac.
+      t?.fill(0);
+      kc?.fill(0);
+      t = kc = null;
     } catch (e) {
       if (destroyed) return;
       setStatus("");
@@ -152,10 +159,13 @@ export function setupView(app: App, frag: SetupFragment): View {
       return;
     }
     if (destroyed) return;
+    let finished = false;
     const done = () => {
-      if (destroyed) return;
+      if (destroyed || finished) return;
+      finished = true;
       for (const c of cleanups.splice(0)) c();
-      app.status = "approved";
+      wipe();
+      app.markApproved(hostPubB64);
       replace(
         body,
         h("div", { class: "success-mark", testid: "setup-done" }, h("span", { text: "✓" })),
@@ -164,21 +174,30 @@ export function setupView(app: App, frag: SetupFragment): View {
       setStatus("");
       setTimeout(() => app.routeByStatus(), 1200);
     };
-    if (app.status === "approved") {
+    const approvedHere = () => app.mac(hostPubB64)?.deviceStatus === "approved";
+    if (approvedHere()) {
       done();
       return;
     }
     const sig = app.signal!;
-    cleanups.push(app.on("status", () => app.status === "approved" && done()));
+    cleanups.push(app.on("macs", () => approvedHere() && done()));
+    // The Mac's confirmation, forwarded by the server (pair-approved or host-joined).
+    const onConfirm = (m: Msg) => {
+      if (!aboutMac(m, hostPubB64)) return;
+      void checkConfirmation(m)
+        .then(done)
+        .catch((e: unknown) => {
+          finished = true;
+          for (const c of cleanups.splice(0)) c();
+          setStatus("");
+          setError(err, `Your Mac's confirmation could not be verified: ${errorMessage(e)}. Do not use this device until you have set it up again.`);
+        });
+    };
+    cleanups.push(sig.on("pair-approved", onConfirm));
+    cleanups.push(sig.on("host-joined", onConfirm));
     cleanups.push(
-      sig.on("pair-approved", (m) => {
-        void verifyCert(m["cert"], hostPub, app.signer?.pub)
-          .then(done)
-          .catch((e: unknown) => setError(err, `Your Mac's confirmation could not be verified: ${errorMessage(e)}`));
-      }),
-    );
-    cleanups.push(
-      sig.on("pair-denied", () => {
+      sig.on("pair-denied", (m) => {
+        if (!aboutMac(m, hostPubB64)) return;
         setStatus("");
         setError(err, "Your Mac did not approve this device. Show a new setup code on your Mac and try again.");
       }),
@@ -191,6 +210,18 @@ export function setupView(app: App, frag: SetupFragment): View {
       replace(body, button({ label: "Continue", testid: "setup-continue", variant: "primary", onClick: () => app.boot() }));
     }, APPROVAL_WAIT_MS);
     cleanups.push(() => clearTimeout(timeout));
+  }
+
+  /** Verifies the cert, and the hostMac when the Mac sent one (it proves the Mac holds Ka). */
+  async function checkConfirmation(m: Msg): Promise<void> {
+    const signer = app.signer;
+    if (!signer) throw new Error("This device's key is not available.");
+    await verifyCert(m["cert"], hostPub, signer.pub);
+    if (m["hostMac"] !== undefined) {
+      if (!ka) throw new Error("setup secret missing");
+      const hm = b64Field(m, "hostMac", 32);
+      if (!(await verifyHostConfirmMac(ka, hostPub, signer.pub, hm))) throw new Error("the confirmation code doesn't match");
+    }
   }
 
   void begin();

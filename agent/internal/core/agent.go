@@ -39,6 +39,9 @@ const (
 	replayCacheTTL     = 2*proto.MaxClockSkew + time.Minute
 	maxSetupFailures   = 20
 	stateRefreshPeriod = 2 * time.Second
+	// setupSecretSize is the size of T for claiming an unclaimed server (§4);
+	// joining an account uses proto.JoinSecretSize (§10.2).
+	setupSecretSize = 32
 )
 
 // Options configure an Agent.
@@ -83,6 +86,8 @@ type Agent struct {
 	// Immutable after Start.
 	cfg        Config
 	hostPub    []byte
+	hostPubB64 string
+	macID      string
 	storageKey []byte
 	origin     string
 	wsURL      string
@@ -90,20 +95,27 @@ type Agent struct {
 	dlDir      string
 
 	// Loop-owned state.
-	settings      Settings
-	store         *trust.Store // nil when the trust store is unusable
-	storeErr      error
-	alog          *accesslog.Log
-	pairing       *Pairing
-	server        string
-	serverError   string
-	claimed       bool
-	sender        signaling.Sender
-	sig           *signaling.Client
-	iceServers    []webrtc.ICEServer
+	settings    Settings
+	store       *trust.Store // nil when the trust store is unusable
+	storeErr    error
+	alog        *accesslog.Log
+	pairing     *Pairing
+	server      string
+	serverError string
+	claimed     bool // the server has an owner (§4)
+	joined      bool // this Mac is in the owner's account (§10.2)
+	sender      signaling.Sender
+	sig         *signaling.Client
+	iceServers  []webrtc.ICEServer
+	// One-time secret T: 32 bytes to claim an unclaimed server (§4), or
+	// proto.JoinSecretSize bytes to join the owner's account (§10.2). Memory
+	// only, never logged.
 	setupT        []byte
 	setupKa       []byte
+	setupCommit   string // b64 claimCommit H(Kc) of setupT ("" without T)
+	sentCommit    string // claimCommit sent in the latest host-auth
 	setupFailures int
+	reconnects    int // forced reconnects (re-send host-auth), for tests
 	displays      []Display
 	activeDisplay int64
 	sess          *Session
@@ -188,6 +200,8 @@ func (a *Agent) Start(parent context.Context, cfg Config) error {
 	}
 	a.cfg = cfg
 	a.hostPub = hp
+	a.hostPubB64 = proto.B64(hp)
+	a.macID = proto.MacID(hp)
 	a.storageKey = key
 	a.origin, a.wsURL = origin, wsURL
 	a.settings = sanitizeSettings(cfg.Settings)
@@ -391,10 +405,19 @@ func (a *Agent) flushState() {
 func (a *Agent) buildState() State {
 	st := State{
 		Server: a.server, ServerError: a.serverError, Claimed: a.claimed,
+		Joined: a.joined, MacID: a.macID,
 		Pending: []PendingState{}, Devices: []DeviceState{},
 	}
-	if a.setupT != nil && !a.claimed && a.server == signaling.StatusOnline {
-		st.SetupURL = a.origin + "/#setup=" + proto.B64(a.setupT) + "." + proto.B64(a.hostPub)
+	// Show a code only when the server knows its commit (it was in the
+	// host-auth of the current connection), so whatever is on screen works.
+	if a.setupT != nil && a.store != nil && a.server == signaling.StatusOnline && a.setupCommit == a.sentCommit {
+		switch {
+		case !a.claimed && len(a.setupT) == setupSecretSize:
+			st.SetupURL = a.origin + "/#setup=" + proto.B64(a.setupT) + "." + a.hostPubB64
+		case a.claimed && !a.joined && len(a.setupT) == proto.JoinSecretSize:
+			st.JoinURL = a.origin + "/#join=" + proto.B64(a.setupT) + "." + a.hostPubB64
+			st.JoinCode = proto.JoinCode(a.setupT)
+		}
 	}
 	if a.store != nil {
 		d := a.store.Snapshot()
@@ -468,12 +491,9 @@ func (a *Agent) issueCert(devicePub []byte, name, kind string) (proto.Cert, erro
 func (a *Agent) HostAuth(ctx context.Context, origin string, nonce []byte) (any, error) {
 	var commit string
 	if !a.call(func() {
-		if a.setupT != nil {
-			kc, _, err := proto.SetupKeys(a.setupT)
-			if err == nil {
-				commit = proto.B64(proto.ClaimCommit(kc))
-			}
-		}
+		commit = a.setupCommit
+		a.sentCommit = commit
+		a.dirty = true
 	}) {
 		return nil, errors.New("agent stopped")
 	}
@@ -510,17 +530,77 @@ func (a *Agent) OnReady(s signaling.Sender, raw []byte) {
 		}
 		a.sender = s
 		a.server, a.serverError = signaling.StatusOnline, ""
-		a.claimed = m.Claimed
 		if m.Origin != "" && m.Origin != a.origin {
 			a.logf("server reports origin %q, configured %q (using configured)", m.Origin, a.origin)
 		}
 		a.setICEServers(m.IceServers)
-		if a.claimed { // an unclaimed (pending) host may not send these
-			a.sendTrustSync()
-			a.sendHostStatus()
-		}
-		a.dirty = true
+		a.applyMembership(m, true)
 	})
+}
+
+// bound reports whether the server treats this Mac as the owner's (claimed
+// and in the account). Only a bound Mac sends trust-sync and host-status; a
+// pending (unclaimed or joining) Mac may not.
+func (a *Agent) bound() bool { return a.claimed && a.joined }
+
+// applyMembership applies claimed/joined from host-ready (or an in-band
+// update), and makes sure the right one-time secret exists and is committed:
+//
+//	unclaimed server            → 32-byte setup T, setupURL (§4)
+//	claimed, Mac not in account → 10-byte join T, joinURL + joinCode (§10.2)
+//	Mac in the account          → nothing to show
+//
+// A T that exists when the Mac becomes joined is kept: on a first claim the
+// server reports claimed before it forwards setup-device (§4 step 4–5).
+// fresh is true for the host-ready that opens a connection.
+func (a *Agent) applyMembership(m inMsg, fresh bool) {
+	wasBound := a.bound()
+	a.claimed = m.Claimed
+	// Servers before HR1.1 send no "joined": one Mac per server, so a claimed
+	// server that accepted us means this Mac is the owner's.
+	a.joined = a.claimed && (m.Joined == nil || *m.Joined)
+	if m.MacID != "" && m.MacID != a.macID {
+		a.logf("server reports Mac ID %q, ours is %q (using ours)", truncate(m.MacID, 16), a.macID)
+	}
+	if a.bound() && (fresh || !wasBound) {
+		a.sendTrustSync()
+		a.sendHostStatus()
+	}
+	a.ensureSecret()
+	a.dirty = true
+}
+
+// ensureSecret creates the one-time secret the server state calls for and,
+// if the server does not have its commit yet, reconnects so that host-auth
+// carries it (the server reads claimCommit only from host-auth).
+func (a *Agent) ensureSecret() {
+	if a.store == nil {
+		return // trust store unusable: no setup or join
+	}
+	var want int
+	switch {
+	case !a.claimed:
+		want = setupSecretSize
+	case !a.joined:
+		want = proto.JoinSecretSize
+	default:
+		return
+	}
+	if len(a.setupT) != want {
+		a.newSecret(want)
+	}
+	if a.setupCommit != a.sentCommit {
+		a.requestReconnect()
+	}
+}
+
+// requestReconnect drops the signaling connection and reconnects at once,
+// so the next host-auth carries the current claimCommit.
+func (a *Agent) requestReconnect() {
+	a.reconnects++
+	if a.sig != nil {
+		a.sig.Reconnect()
+	}
 }
 
 // OnMessage implements signaling.Handler.
@@ -545,6 +625,12 @@ func (a *Agent) handleSignal(typ string, raw []byte) {
 	}
 	if a.store == nil {
 		return // trust store unusable: refuse everything
+	}
+	if m.HostPub != "" && m.HostPub != a.hostPubB64 {
+		// Routed messages name the target Mac (§10.3); never act on one
+		// meant for another Mac.
+		a.logf("signaling: %q for another Mac ignored", truncate(typ, 32))
+		return
 	}
 	switch typ {
 	case "pair-request":
@@ -572,20 +658,40 @@ func (a *Agent) handleSignal(typ string, raw []byte) {
 			a.endSession(s, "client:"+truncate(m.Reason, 32), false)
 		}
 	case "host-ready":
-		// Sent again on the same connection when the server gets claimed.
-		was := a.claimed
-		a.claimed = m.Claimed
+		// Sent again on the same connection when the server gets claimed or
+		// this Mac joins the owner's account.
 		a.setICEServers(m.IceServers)
-		if a.claimed && !was {
-			a.sendTrustSync()
-			a.sendHostStatus()
+		a.applyMembership(m, false)
+	case "hosts-changed":
+		// Only meaningful for a Mac when it says whether we are in the account.
+		if m.Joined != nil {
+			if *m.Joined {
+				m.Claimed = true
+			} else {
+				m.Claimed = a.claimed
+			}
+			a.applyMembership(m, false)
 		}
-		a.dirty = true
 	case "turn":
 		a.setICEServers(m.IceServers)
 	case "error":
 		a.logf("server error: %s", truncate(m.Code, 64))
+		if m.Code == "removed" {
+			a.removedFromAccount()
+		}
 	}
+}
+
+// removedFromAccount handles error{code:"removed"} (§10.2): the owner removed
+// this Mac from the account. The Mac keeps its own pins (it stays the root of
+// trust) but is no longer joined, so it shows a fresh join code.
+func (a *Agent) removedFromAccount() {
+	a.claimed, a.joined = true, false
+	a.appendLog(accesslog.Entry{Event: accesslog.EvRemovedFromAccount, Detail: "removed from the account on the server"})
+	a.io.EmitEvent(Event{Event: "removed-from-account"})
+	a.newSecret(proto.JoinSecretSize)
+	a.requestReconnect() // the server closes the socket too; one reconnect results
+	a.dirty = true
 }
 
 func (a *Agent) setICEServers(raw json.RawMessage) {
@@ -630,13 +736,16 @@ func (a *Agent) setICEServers(raw json.RawMessage) {
 }
 
 func (a *Agent) sendTrustSync() {
-	if a.store == nil {
+	if a.store == nil || !a.bound() {
 		return
 	}
 	a.send(trustSyncMsg{Type: "trust-sync", Certs: a.store.Certs(), Revocations: a.store.Revocations()})
 }
 
 func (a *Agent) sendHostStatus() {
+	if !a.bound() {
+		return
+	}
 	m := hostStatusMsg{Type: "host-status", State: "available"}
 	if a.killed() {
 		m.State = "blocked"
@@ -648,18 +757,24 @@ func (a *Agent) sendHostStatus() {
 
 // ------------------------------------------------------------ setup (§4)
 
-func (a *Agent) newSetupSecret() {
+func (a *Agent) newSetupSecret() { a.newSecret(setupSecretSize) }
+
+// newSecret replaces T with n fresh random bytes (32 = claim, 10 = join).
+// The caller reconnects when the server must learn the new commit.
+func (a *Agent) newSecret(n int) {
 	clear(a.setupT)
 	clear(a.setupKa)
-	t := make([]byte, 32)
+	t := make([]byte, n)
 	if _, err := rand.Read(t); err != nil {
 		panic(err)
 	}
-	_, ka, err := proto.SetupKeys(t)
+	kc, ka, err := proto.SetupKeys(t)
 	if err != nil {
 		panic(err)
 	}
 	a.setupT, a.setupKa = t, ka
+	a.setupCommit = proto.B64(proto.ClaimCommit(kc))
+	clear(kc)
 	a.setupFailures = 0
 	a.dirty = true
 }
@@ -667,10 +782,13 @@ func (a *Agent) newSetupSecret() {
 func (a *Agent) forgetSetupSecret() {
 	clear(a.setupT)
 	clear(a.setupKa)
-	a.setupT, a.setupKa = nil, nil
+	a.setupT, a.setupKa, a.setupCommit = nil, nil, ""
 	a.dirty = true
 }
 
+// handleSetupDevice finishes a first claim (§4) or a join (§10.2): both
+// prove knowledge of T with setupMac = HMAC(Ka, …) and are answered with
+// device-approved {cert, hostMac}.
 func (a *Agent) handleSetupDevice(m inMsg) {
 	if a.setupKa == nil {
 		a.logf("setup-device without an active setup code: ignored")
@@ -684,10 +802,12 @@ func (a *Agent) handleSetupDevice(m inMsg) {
 		a.appendLog(accesslog.Entry{Event: accesslog.EvSetupFailed, Device: m.Name, Detail: "setup MAC invalid"})
 		a.io.EmitEvent(Event{Event: "setup-failed"})
 		if a.setupFailures >= maxSetupFailures {
-			a.newSetupSecret() // invalidate the displayed code
+			a.newSecret(len(a.setupT)) // invalidate the displayed code
+			a.requestReconnect()       // and give the server the new commit
 		}
 		return
 	}
+	join := len(a.setupT) == proto.JoinSecretSize
 	if a.store.IsRevoked(m.DevicePub) {
 		a.logf("setup-device for a revoked key: refused")
 		return
@@ -703,12 +823,26 @@ func (a *Agent) handleSetupDevice(m inMsg) {
 		a.logf("setup-device: saving failed: %v", err)
 		return
 	}
+	hostMac := proto.HostConfirmMAC(a.setupKa, a.hostPub, dp)
 	a.forgetSetupSecret()
-	a.claimed = true
-	a.send(deviceApprovedMsg{Type: "device-approved", Cert: cert})
+	wasBound := a.bound()
+	a.claimed, a.joined = true, true
+	a.send(deviceApprovedMsg{Type: "device-approved", Cert: cert, HostMac: proto.B64(hostMac)})
 	a.sendTrustSync()
-	a.appendLog(accesslog.Entry{Event: accesslog.EvDeviceAdded, Device: m.Name, DeviceFP: proto.Fingerprint(dp), Detail: "first device (setup)"})
+	if !wasBound {
+		a.sendHostStatus()
+	}
+	fp := proto.Fingerprint(dp)
+	if join {
+		a.appendLog(accesslog.Entry{Event: accesslog.EvJoinedAccount, Device: m.Name, DeviceFP: fp, Detail: "added to your account"})
+		a.appendLog(accesslog.Entry{Event: accesslog.EvDeviceAdded, Device: m.Name, DeviceFP: fp, Detail: "added this Mac to your account"})
+	} else {
+		a.appendLog(accesslog.Entry{Event: accesslog.EvDeviceAdded, Device: m.Name, DeviceFP: fp, Detail: "first device (setup)"})
+	}
 	a.io.EmitEvent(Event{Event: "device-added", Device: devInfo(dev)})
+	if join {
+		a.io.EmitEvent(Event{Event: "joined-account", Device: devInfo(dev)})
+	}
 	a.dirty = true
 }
 
@@ -1005,10 +1139,14 @@ func (a *Agent) handleCommand(c Command) {
 			s.sendClipboard(c.Text)
 		}
 	case "new-setup-code":
-		a.newSetupSecret()
-		if a.sig != nil {
-			a.sig.Reconnect() // re-send host-auth with the new claimCommit
+		// A setup code for an unclaimed server, a join code otherwise
+		// (corrected on the next host-ready if the server says differently).
+		if a.claimed {
+			a.newSecret(proto.JoinSecretSize)
+		} else {
+			a.newSetupSecret()
 		}
+		a.requestReconnect() // re-send host-auth with the new claimCommit
 	default:
 		a.logf("command: unknown %q", truncate(c.Cmd, 32))
 	}

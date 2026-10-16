@@ -135,41 +135,48 @@ type deviceProof struct {
 	Sig       string `json:"sig"`
 }
 
-// checkDeviceProof verifies HR1/client-auth(origin, nonce) by an approved
-// device, using a single-use nonce issued to this session. Returns the
-// device name.
-func (s *Server) checkDeviceProof(w http.ResponseWriter, r *http.Request, a *authInfo, p deviceProof) (string, bool) {
+// provenDevice is the device that passed a device proof.
+type provenDevice struct {
+	pub, name, kind string
+}
+
+// checkDeviceProof verifies HR1/client-auth(origin, nonce) by a device that
+// is approved on at least one bound Mac, using a single-use nonce issued to
+// this session.
+func (s *Server) checkDeviceProof(w http.ResponseWriter, r *http.Request, a *authInfo, p deviceProof) (provenDevice, bool) {
 	pub, ok := b64Key(p.DevicePub)
 	nonce, err := proto.UnB64Len(p.Nonce, proto.NonceSize)
 	if !ok || err != nil {
 		writeError(w, http.StatusBadRequest, "bad-request")
-		return "", false
+		return provenDevice{}, false
 	}
 	sig, err := proto.UnB64Len(p.Sig, proto.SignatureSize)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad-request")
-		return "", false
+		return provenDevice{}, false
 	}
 	if !s.mem.takeNonce(p.Nonce, a.hash, s.now()) {
 		writeError(w, http.StatusForbidden, "bad-nonce")
-		return "", false
+		return provenDevice{}, false
 	}
 	if !proto.Verify(pub, sig, proto.LabelClientAuth, proto.Str(s.cfg.Origin), nonce) {
 		s.authFailure(r, "device proof signature")
 		writeError(w, http.StatusForbidden, "bad-signature")
-		return "", false
+		return provenDevice{}, false
 	}
-	var name, status string
+	dev := provenDevice{pub: proto.B64(pub)}
+	approved := false
 	s.st.View(func(st *store.State) {
-		if d, ok := st.Devices[p.DevicePub]; ok {
-			name, status = d.Name, d.Status
+		if d, ok := st.Devices[dev.pub]; ok {
+			dev.name, dev.kind = d.Name, d.Kind
 		}
+		approved = st.ApprovedOnAny(dev.pub)
 	})
-	if status != store.StatusApproved {
+	if !approved {
 		writeError(w, http.StatusForbidden, "device-not-approved")
-		return "", false
+		return provenDevice{}, false
 	}
-	return name, true
+	return dev, true
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -202,21 +209,18 @@ func (s *Server) handleNonce(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"nonce": n})
 }
 
-type meHost struct {
-	Pub               string `json:"pub"`
-	Name              string `json:"name"`
-	Online            bool   `json:"online"`
-	State             string `json:"state"`
-	SessionDeviceName string `json:"sessionDeviceName,omitempty"`
+type meApproval struct {
+	HostPub string `json:"hostPub"`
+	Status  string `json:"status"`
 }
 
 type meDevice struct {
-	Pub       string `json:"pub"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Status    string `json:"status"`
-	CreatedAt int64  `json:"createdAt"`
-	LastSeen  int64  `json:"lastSeen"`
+	Pub       string       `json:"pub"`
+	Name      string       `json:"name"`
+	Kind      string       `json:"kind"`
+	CreatedAt int64        `json:"createdAt"`
+	LastSeen  int64        `json:"lastSeen"`
+	Approvals []meApproval `json:"approvals"`
 }
 
 type mePasskey struct {
@@ -232,16 +236,24 @@ func unix(t time.Time) int64 {
 	return t.Unix()
 }
 
+// handleMe returns the account overview (PROTOCOL.md §10.4): the Macs, the
+// devices with their per-Mac approvals, and the passkeys.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if s.requireSession(w, r) == nil {
 		return
 	}
-	host := s.hub.hostInfo()
+	hosts := s.hub.meHosts()
 	devices := []meDevice{}
 	passkeys := []mePasskey{}
 	s.st.View(func(st *store.State) {
 		for _, d := range st.SortedDevices() {
-			devices = append(devices, meDevice{Pub: d.Pub, Name: d.Name, Kind: d.Kind, Status: d.Status, CreatedAt: unix(d.CreatedAt), LastSeen: unix(d.LastSeen)})
+			md := meDevice{Pub: d.Pub, Name: d.Name, Kind: d.Kind, CreatedAt: unix(d.CreatedAt), LastSeen: unix(d.LastSeen), Approvals: []meApproval{}}
+			for _, hb := range st.Hosts {
+				if a := d.Approval(hb.Pub); a != nil {
+					md.Approvals = append(md.Approvals, meApproval{HostPub: hb.Pub, Status: a.Status})
+				}
+			}
+			devices = append(devices, md)
 		}
 		if st.Owner != nil {
 			for _, p := range st.Owner.Passkeys {
@@ -249,5 +261,5 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"host": host, "devices": devices, "passkeys": passkeys})
+	writeJSON(w, http.StatusOK, map[string]any{"hosts": hosts, "devices": devices, "passkeys": passkeys})
 }

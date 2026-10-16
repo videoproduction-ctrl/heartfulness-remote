@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -77,8 +76,8 @@ func (s *Server) handleSetupBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "already-claimed")
 		return
 	}
-	if s.cfg.HostPubPin != nil && !bytes.Equal(hostPub, s.cfg.HostPubPin) {
-		s.authFailure(r, "setup for a host key that is not the pinned one")
+	if !s.cfg.HostAllowed(hostPub) {
+		s.authFailure(r, "setup for a host key not in HR_HOST_PUBKEY")
 		writeError(w, http.StatusForbidden, "host-not-allowed")
 		return
 	}
@@ -167,8 +166,11 @@ func (s *Server) handleSetupFinish(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:  now,
 			Passkeys:   []store.Passkey{{ID: proto.B64(cred.ID), Name: "Passkey 1", CreatedAt: now, Credential: *cred}},
 		}
-		st.Host = &store.HostBinding{Pub: proto.B64(f.hostPub), Name: hostName, ClaimedAt: now}
-		st.Devices = map[string]*store.Device{devB64: {Pub: devB64, Name: name, Kind: req.Device.Kind, Status: store.StatusPending, CreatedAt: now}}
+		hostB64 := proto.B64(f.hostPub)
+		st.Hosts = []*store.HostBinding{{Pub: hostB64, Name: hostName, MacID: proto.MacID(f.hostPub), ClaimedAt: now, LastSeen: now}}
+		dev := &store.Device{Pub: devB64, Name: name, Kind: req.Device.Kind, CreatedAt: now}
+		dev.SetApproval(hostB64, &store.Approval{Status: store.StatusPending, CreatedAt: now})
+		st.Devices = map[string]*store.Device{devB64: dev}
 		st.Sessions = map[string]*store.Session{}
 		tok = s.newSession(st, store.KindCookie, "", now)
 		st.AddEvent(store.Event{Time: now, Type: "claimed", Device: name, IP: ip})
@@ -351,7 +353,7 @@ func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	devName, ok := s.checkDeviceProof(w, r, a, req.deviceProof)
+	dev, ok := s.checkDeviceProof(w, r, a, req.deviceProof)
 	if !ok {
 		return
 	}
@@ -406,7 +408,7 @@ func (s *Server) handlePasskeyFinish(w http.ResponseWriter, r *http.Request) {
 		}
 		now := s.now()
 		st.Owner.Passkeys = append(st.Owner.Passkeys, store.Passkey{ID: id, Name: name, CreatedAt: now, Credential: *cred})
-		st.AddEvent(store.Event{Time: now, Type: "passkey-added", Device: devName, IP: ipFrom(r).String()})
+		st.AddEvent(store.Event{Time: now, Type: "passkey-added", Device: dev.name, IP: ipFrom(r).String()})
 		return nil
 	})
 	if errors.Is(err, errDuplicate) {
@@ -435,7 +437,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	devName, ok := s.checkDeviceProof(w, r, a, req.deviceProof)
+	dev, ok := s.checkDeviceProof(w, r, a, req.deviceProof)
 	if !ok {
 		return
 	}
@@ -456,7 +458,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 			return errLastPasskey
 		}
 		st.Owner.Passkeys = append(st.Owner.Passkeys[:idx], st.Owner.Passkeys[idx+1:]...)
-		st.AddEvent(store.Event{Time: s.now(), Type: "passkey-deleted", Device: devName, IP: ipFrom(r).String()})
+		st.AddEvent(store.Event{Time: s.now(), Type: "passkey-deleted", Device: dev.name, IP: ipFrom(r).String()})
 		return nil
 	})
 	switch {
@@ -478,4 +480,5 @@ var (
 	errDuplicate      = errors.New("duplicate")
 	errNotFound       = errors.New("not found")
 	errLastPasskey    = errors.New("cannot delete the last passkey")
+	errNotClaimed     = errors.New("not claimed")
 )

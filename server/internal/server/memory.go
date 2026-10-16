@@ -33,16 +33,19 @@ const (
 	flowSetup flowKind = iota + 1
 	flowLogin
 	flowPasskey
+	flowJoin
 )
 
 type flow struct {
 	kind        flowKind
 	sd          webauthn.SessionData
 	expires     time.Time
-	hostPub     []byte // setup: claimed host key
+	hostPub     []byte // setup, join: the Mac's host key
 	userHandle  []byte // setup: new owner handle
-	sessionHash string // passkey: session that started the flow
+	sessionHash string // passkey, join: session that started the flow
 	name        string // passkey: display name
+	devicePub   string // join: device that proved itself at join/begin
+	commit      []byte // join: the Mac's claim commit checked at join/begin
 }
 
 type nonceRec struct {

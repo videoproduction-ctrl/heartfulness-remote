@@ -4,6 +4,7 @@
 
 import { type Bytes, b64, toBytes, unb64, unb64Len } from "./b64";
 import { PUB_SIZE, SIG_SIZE, type Signer } from "./hr1";
+import { type KV, type Lock, PinStore } from "./pins";
 import { kvDel, kvGet, kvSet, requestPersistence } from "./store";
 
 export type PlatformKind = "browser" | "tauri";
@@ -30,9 +31,8 @@ export interface Platform {
   setToken(token: string): Promise<void>;
   clearToken(): Promise<void>;
   openURL(url: string): Promise<void>;
-  pinnedHost(): Promise<Bytes | null>;
-  pinHost(hostPub: Uint8Array): Promise<void>;
-  forgetHost(): Promise<void>;
+  /** Pinned Mac keys for the configured server (null when no server is configured). */
+  pins(): PinStore | null;
 }
 
 /**
@@ -67,19 +67,16 @@ function wsFromOrigin(origin: string): string {
   return `${origin.replace(/^http/, "ws")}/ws/client`;
 }
 
-function pinKey(origin: string): string {
-  return `hostPub@${origin}`;
-}
+const idbKV: KV = { get: kvGet, set: kvSet, del: kvDel };
 
-async function readPin(origin: string | null): Promise<Bytes | null> {
-  if (!origin) return null;
-  const v = await kvGet<string>(pinKey(origin));
-  if (typeof v !== "string") return null;
-  try {
-    return unb64Len(v, PUB_SIZE);
-  } catch {
-    return null;
-  }
+/** Serialises pin updates across tabs when the Web Locks API is available. */
+const pinLock: Lock = (fn) => {
+  const locks = (globalThis.navigator as (Navigator & { locks?: LockManager }) | undefined)?.locks;
+  return locks ? locks.request("hr-pins", fn) : fn();
+};
+
+function pinStore(origin: string | null): PinStore | null {
+  return origin ? new PinStore(idbKV, origin, pinLock) : null;
 }
 
 // ------------------------------------------------------------------ browser
@@ -175,17 +172,8 @@ class BrowserPlatform implements Platform {
     location.assign(url);
   }
 
-  pinnedHost(): Promise<Bytes | null> {
-    return readPin(this.origin());
-  }
-
-  async pinHost(hostPub: Uint8Array): Promise<void> {
-    await kvSet(pinKey(this.origin()), b64(hostPub));
-    void requestPersistence();
-  }
-
-  async forgetHost(): Promise<void> {
-    await kvDel(pinKey(this.origin()));
+  pins(): PinStore | null {
+    return pinStore(this.origin());
   }
 }
 
@@ -324,17 +312,8 @@ class TauriPlatform implements Platform {
     await this.invoke("open_url", { url });
   }
 
-  pinnedHost(): Promise<Bytes | null> {
-    return readPin(this.serverOrigin);
-  }
-
-  async pinHost(hostPub: Uint8Array): Promise<void> {
-    if (!this.serverOrigin) throw new Error("No server address is configured.");
-    await kvSet(pinKey(this.serverOrigin), b64(hostPub));
-  }
-
-  async forgetHost(): Promise<void> {
-    if (this.serverOrigin) await kvDel(pinKey(this.serverOrigin));
+  pins(): PinStore | null {
+    return pinStore(this.serverOrigin);
   }
 }
 

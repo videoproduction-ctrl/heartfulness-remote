@@ -67,6 +67,9 @@ const (
 	EvAgentStart       = "agent-start"
 	EvOfferRejected    = "offer-rejected"
 	EvApprovalRejected = "approval-rejected"
+	// Multiple Macs (PROTOCOL.md §10).
+	EvJoinedAccount      = "joined-account"
+	EvRemovedFromAccount = "removed-from-account"
 )
 
 // HeadStore persists the chain anchor (count + head hash) in a MAC-protected

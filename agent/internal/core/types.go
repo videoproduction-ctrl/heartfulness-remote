@@ -95,11 +95,21 @@ type DeviceState struct {
 }
 
 // State is the STATE frame.
+//
+// SetupURL is set only while the server is online and unclaimed (§4).
+// JoinURL/JoinCode are set only while the server is online, claimed, and this
+// Mac is not in the owner's account yet (§10.2). Both appear only once the
+// server has received the matching claimCommit, so a code shown always works.
+// MacID (9 digits, no spaces) and Joined are always present.
 type State struct {
 	Server      string         `json:"server"`
 	ServerError string         `json:"serverError,omitempty"`
 	Claimed     bool           `json:"claimed"`
+	Joined      bool           `json:"joined"`
+	MacID       string         `json:"macId"`
 	SetupURL    string         `json:"setupURL,omitempty"`
+	JoinURL     string         `json:"joinURL,omitempty"`
+	JoinCode    string         `json:"joinCode,omitempty"`
 	Killed      bool           `json:"killed"`
 	Session     *SessionState  `json:"session"`
 	Pending     []PendingState `json:"pending"`

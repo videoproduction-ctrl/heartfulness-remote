@@ -2,7 +2,10 @@
 // tests and local development on Linux: it holds the host key, feeds video
 // (VP8 .ivf or H.264 Annex-B .h264) and Opus audio (.ogg) from files, records
 // every INPUT / CLIPBOARD_SET / EVENT (plus ENCODER / AUDIO_CTL) as JSON lines
-// and writes the latest STATE to a file. Commands are read from stdin:
+// and writes the latest STATE to a file (including macId, joined and, while
+// this Mac is not in the owner's account, joinURL/joinCode). Several hostsims
+// with different --data directories (and so different host keys) can run
+// against one server to simulate several Macs. Commands are read from stdin:
 //
 //	approve <requestId> | deny <requestId> | kill | resume | disconnect
 //	clipboard <text> | revoke <devicePub> | new-setup-code | log [n] | quit
@@ -127,7 +130,8 @@ func main() {
 	agent.OnCommand(mustJSON(map[string]any{"cmd": "displays", "active": 1, "list": []map[string]any{
 		{"id": 1, "name": "Simulated Display", "width": 1280, "height": 720, "scale": 1, "primary": true},
 	}}))
-	logger.Printf("host key fingerprint %s (pub %s)", proto.Fingerprint(pub), proto.B64(pub))
+	logger.Printf("host key fingerprint %s (pub %s), Mac ID %s", proto.Fingerprint(pub), proto.B64(pub),
+		proto.FormatMacID(proto.MacID(pub)))
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -244,8 +248,10 @@ func (h *simHost) EmitState(s core.State) {
 			h.logger.Printf("state file: %v", err)
 		}
 	}
-	h.logger.Printf("STATE server=%s claimed=%v killed=%v devices=%d pending=%d session=%v",
-		s.Server, s.Claimed, s.Killed, len(s.Devices), len(s.Pending), s.Session != nil)
+	// Never log setupURL / joinURL / joinCode (one-time secrets).
+	h.logger.Printf("STATE server=%s claimed=%v joined=%v macId=%s killed=%v devices=%d pending=%d session=%v setup=%v join=%v",
+		s.Server, s.Claimed, s.Joined, s.MacID, s.Killed, len(s.Devices), len(s.Pending), s.Session != nil,
+		s.SetupURL != "", s.JoinCode != "")
 }
 
 func (h *simHost) EmitInput(msg json.RawMessage) { h.record("INPUT", msg) }

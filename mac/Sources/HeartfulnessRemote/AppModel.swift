@@ -32,6 +32,8 @@ final class AppModel: ObservableObject {
     /// The host identity could not be loaded from the keychain.
     @Published private(set) var identityError: HostKeyError?
     @Published private(set) var hostFingerprint = ""
+    /// This Mac's ID (nine digits, from the host key; PROTOCOL.md §10.1). "" without an identity.
+    @Published private(set) var hostMacID = ""
     @Published private(set) var keyProtection: KeyProtection?
     @Published private(set) var logResult: LogResult?
     @Published private(set) var logLoading = false
@@ -125,6 +127,21 @@ final class AppModel: ObservableObject {
     }
 
     var serverDisplayName: String { ServerAddress.displayName(settings.serverURL) }
+
+    /// "482 913 557" — computed from the host key, so it shows even before the helper reports it.
+    var macIDText: String {
+        MacIDFormatter.format(hostMacID.isEmpty ? state.macId : hostMacID)
+    }
+
+    /// "Mac ID 482 913 557", or nil while no identity is loaded.
+    var macIDLine: String? {
+        AccountText.macIDLine(hostMacID.isEmpty ? state.macId : hostMacID)
+    }
+
+    /// The server is online, has an owner, but this Mac isn't in the owner's account yet.
+    var needsJoin: Bool {
+        agentRunning && state.server == .online && state.account == .notInAccount
+    }
 
     /// The kill switch. Settable so a SwiftUI Toggle can bind to it (`$model.connectionsBlocked`).
     var connectionsBlocked: Bool {
@@ -223,11 +240,13 @@ final class AppModel: ObservableObject {
             signer = loaded
             identityError = nil
             hostFingerprint = loaded.fingerprint
+            hostMacID = loaded.macID
             keyProtection = loaded.protection
         case .failure(let error):
             signer = nil
             identityError = error
             hostFingerprint = ""
+            hostMacID = ""
             keyProtection = nil
             Log.keys.error("Host identity unavailable: \(error.title, privacy: .public)")
         }
@@ -344,6 +363,8 @@ final class AppModel: ObservableObject {
         s.session = nil
         s.pending = []
         s.setupURL = nil
+        s.joinURL = nil
+        s.joinCode = nil
         state = s
         qrCache = nil
     }
@@ -419,7 +440,7 @@ final class AppModel: ObservableObject {
                 sessionActivity = nil
             }
         }
-        if new.setupURL != old.setupURL { qrCache = nil }
+        if new.setupURL != old.setupURL || new.joinURL != old.joinURL { qrCache = nil }
     }
 
     private func handle(event: AgentEvent) {
@@ -574,11 +595,32 @@ final class AppModel: ObservableObject {
     /// The QR code for STATE.setupURL (cached; the URL contains the one-time setup secret and
     /// is never logged or copied anywhere).
     func setupQRCode() -> NSImage? {
-        guard let url = state.setupURL else { return nil }
+        qrCode(for: state.setupURL)
+    }
+
+    /// The QR code for STATE.joinURL ("Add this Mac to your account"; same rules as the setup code).
+    func joinQRCode() -> NSImage? {
+        qrCode(for: state.joinURL)
+    }
+
+    private func qrCode(for url: String?) -> NSImage? {
+        guard let url else { return nil }
         if let cached = qrCache, cached.text == url { return cached.image }
         guard let image = QRCode.image(for: url, pointSize: 240) else { return nil }
         qrCache = (text: url, image: image)
         return image
+    }
+
+    /// "Connect to another Mac…": opens the server's web page in the default browser. Every Mac
+    /// can also be a controller — the browser client signs in with the owner's passkey.
+    func openWebClient() {
+        guard !settings.serverURL.isEmpty, let url = URL(string: settings.serverURL) else {
+            notice = "First type your server address (Dashboard → Settings)."
+            return
+        }
+        if !NSWorkspace.shared.open(url) {
+            notice = "Your web browser could not be opened. Open \(serverDisplayName) in it yourself."
+        }
     }
 
     // MARK: Settings

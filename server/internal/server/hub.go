@@ -25,11 +25,14 @@ const (
 	msgBurst           = 200
 	sendQueueLen       = 256
 	writeTimeout       = 10 * time.Second
-	maxPendingHosts    = 5
+	maxPendingHosts    = 5 // unbound Macs waiting to be claimed or to join
 	maxPendingPerIP    = 2
+	pendingJoinTTL     = 30 * time.Minute // a waiting (join) Mac is dropped after this
+	maxJoinsPerHost    = 4                // outstanding join/finish requests per waiting Mac
 	maxClientConns     = 20
 	maxPreAuthConns    = 64
-	maxPairings        = 3
+	maxPairingsPerHost = 3 // PROTOCOL.md §5: at most 3 pending per Mac
+	maxPairings        = 32
 	pairingTTL         = 5 * time.Minute
 	sessionRequestTTL  = 60 * time.Second
 	maxSessionsPerConn = 4
@@ -83,6 +86,7 @@ type inMsg struct {
 	Nd          string            `json:"nd"`
 	Approved    *bool             `json:"approved"`
 	Cert        *proto.Cert       `json:"cert"`
+	HostMac     string            `json:"hostMac"`
 	Reason      string            `json:"reason"`
 	ApproverPub string            `json:"approverPub"`
 	TargetPub   string            `json:"targetPub"`
@@ -122,11 +126,20 @@ type conn struct {
 	nonce []byte
 
 	// Set under hub.mu once authenticated.
-	authed      bool
-	hostPub     string // b64
-	hostName    string
-	claimCommit []byte
-	bound       bool
+	authed bool
+
+	// Host connections.
+	hostPub      string // b64
+	hostName     string
+	macID        string
+	claimCommit  []byte
+	bound        bool                // bound to the owner and in hub.hosts
+	pendingSince time.Time           // when it started waiting (unbound)
+	hostState    string              // bound: available | in-session | blocked
+	hostSessDev  string              // bound: name of the device in session
+	joins        map[string]*joinReq // waiting Mac: devicePub → outstanding join
+
+	// Client connections.
 	cookieTok   string
 	sessionHash string
 	devicePub   string // b64
@@ -293,7 +306,10 @@ func (c *conn) serve(handle func(*conn, *inMsg) bool) {
 
 // ---- hub ----
 
+// setupDevice is the claim's first device (§4), re-sent to the claimed Mac
+// after a reconnect until it answers.
 type setupDevice struct {
+	HostPub   string
 	DevicePub string
 	Name      string
 	Kind      string
@@ -301,11 +317,18 @@ type setupDevice struct {
 	expires   time.Time
 }
 
+// joinReq is an outstanding join/finish for a waiting Mac (§10.2).
+type joinReq struct {
+	devicePub, name, kind string
+	expires               time.Time
+}
+
 type pairing struct {
 	id         string
 	idRaw      []byte
 	conn       *conn  // requesting device connection (nil if it went away)
 	devicePub  string // b64, from the authenticated connection
+	hostPub    string // b64, the Mac being paired with
 	name, kind string
 	commit     []byte
 	na, hostSg []byte
@@ -320,6 +343,7 @@ type rtcSession struct {
 	id        string
 	client    *conn
 	devicePub string
+	hostPub   string
 	accepted  bool
 	created   time.Time
 }
@@ -331,10 +355,8 @@ type hub struct {
 
 	all          map[*conn]struct{}
 	preAuth      int
-	host         *conn
-	hostState    string
-	hostSessDev  string
-	pendingHosts map[string]*conn
+	hosts        map[string]*conn // bound, connected Macs by b64 host key
+	pendingHosts map[string]*conn // authenticated but unbound Macs (claim or join)
 	clients      map[*conn]struct{}
 	pairings     map[string]*pairing
 	sessions     map[string]*rtcSession
@@ -345,6 +367,7 @@ func newHub(s *Server) *hub {
 	return &hub{
 		s:            s,
 		all:          map[*conn]struct{}{},
+		hosts:        map[string]*conn{},
 		pendingHosts: map[string]*conn{},
 		clients:      map[*conn]struct{}{},
 		pairings:     map[string]*pairing{},
@@ -426,7 +449,7 @@ func (h *hub) turnRefresher(c *conn) {
 			return
 		case <-t.C:
 			h.mu.Lock()
-			bound := c.bound && h.host == c
+			bound := c.bound && h.hosts[c.hostPub] == c
 			h.mu.Unlock()
 			if bound {
 				c.sendMsg(msg{"type": "turn", "iceServers": h.s.iceServers()})
@@ -447,10 +470,12 @@ func (h *hub) remove(c *conn) {
 		return
 	}
 	if c.isHost {
-		if h.host == c {
-			h.host = nil
-			h.hostGoneLocked("host-offline")
-			h.s.log.Info("host disconnected")
+		if h.hosts[c.hostPub] == c {
+			delete(h.hosts, c.hostPub)
+			c.bound = false
+			h.hostGoneLocked(c.hostPub, "host-offline", true)
+			h.s.touchHost(c.hostPub)
+			h.s.log.Info("host disconnected", "macId", c.macID)
 		}
 		if h.pendingHosts[c.hostPub] == c {
 			delete(h.pendingHosts, c.hostPub)
@@ -460,8 +485,8 @@ func (h *hub) remove(c *conn) {
 	delete(h.clients, c)
 	for id, rs := range h.sessions {
 		if rs.client == c {
-			if h.host != nil {
-				h.host.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": "client-disconnected"})
+			if hc := h.hosts[rs.hostPub]; hc != nil {
+				hc.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": "client-disconnected"})
 			}
 			delete(h.sessions, id)
 		}
@@ -474,23 +499,31 @@ func (h *hub) remove(c *conn) {
 	h.s.touchDevice(c.devicePub, true)
 }
 
-// hostGoneLocked ends sessions and pairings after the host connection went away.
-func (h *hub) hostGoneLocked(reason string) {
-	h.hostState, h.hostSessDev = "", ""
+// hostGoneLocked ends the sessions and pairings of one Mac after its
+// connection went away (or it was removed); notify broadcasts host-status.
+func (h *hub) hostGoneLocked(hostPub, reason string, notify bool) {
 	for id, rs := range h.sessions {
-		rs.client.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": reason})
+		if rs.hostPub != hostPub {
+			continue
+		}
+		rs.client.sendMsg(msg{"type": "session-end", "sessionId": id, "hostPub": hostPub, "reason": reason})
 		delete(h.sessions, id)
 	}
 	for id, p := range h.pairings {
-		if p.conn != nil {
-			p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "reason": reason})
+		if p.hostPub != hostPub {
+			continue
 		}
-		if p.revealed {
-			h.toApproversLocked(msg{"type": "approval-closed", "requestId": id}, p.devicePub)
+		if p.conn != nil {
+			p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "hostPub": hostPub, "reason": reason})
+		}
+		if p.revealed && !p.bad {
+			h.toApproversLocked(hostPub, msg{"type": "approval-closed", "requestId": id, "hostPub": hostPub}, p.devicePub)
 		}
 		delete(h.pairings, id)
 	}
-	h.broadcastHostStatusLocked()
+	if notify {
+		h.broadcastHostStatusLocked(hostPub)
+	}
 }
 
 // closeAll asks every connection to close and waits (up to timeout) for
@@ -529,34 +562,105 @@ func (h *hub) dropSession(hash string) {
 	}
 }
 
-// hostInfoLocked describes the host for /api/me and client messages.
-func (h *hub) hostInfoLocked() meHost {
-	var info meHost
-	h.s.st.View(func(st *store.State) {
-		if st.Host != nil {
-			info.Pub, info.Name = st.Host.Pub, st.Host.Name
-		}
-	})
-	info.Online = h.host != nil
-	info.State = hostOffline
-	if info.Online {
-		info.State = h.hostState
-		info.SessionDeviceName = h.hostSessDev
+// hostInfo is the live view of one bound Mac.
+type hostInfo struct {
+	Pub               string `json:"pub"`
+	MacID             string `json:"macId"`
+	Name              string `json:"name"`
+	Online            bool   `json:"online"`
+	State             string `json:"state"`
+	SessionDeviceName string `json:"sessionDeviceName"`
+}
+
+func (h *hub) liveInfoLocked(hb *store.HostBinding) hostInfo {
+	info := hostInfo{Pub: hb.Pub, MacID: hb.MacID, Name: hb.Name, State: hostOffline}
+	if hc := h.hosts[hb.Pub]; hc != nil {
+		info.Online, info.State, info.SessionDeviceName = true, hc.hostState, hc.hostSessDev
 	}
 	return info
 }
 
-func (h *hub) hostInfo() meHost {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.hostInfoLocked()
+// hostInfoLocked describes one bound Mac (ok=false if it is not bound).
+func (h *hub) hostInfoLocked(hostPub string) (info hostInfo, ok bool) {
+	h.s.st.View(func(st *store.State) {
+		if hb := st.Host(hostPub); hb != nil {
+			info, ok = h.liveInfoLocked(hb), true
+		}
+	})
+	return info, ok
 }
 
-func (h *hub) broadcastHostStatusLocked() {
-	info := h.hostInfoLocked()
-	m := msg{"type": "host-status", "online": info.Online, "state": info.State, "sessionDeviceName": info.SessionDeviceName}
+func (h *hub) hostInfo(hostPub string) (hostInfo, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.hostInfoLocked(hostPub)
+}
+
+// readyHost is one entry of ready.hosts (§10.4): the Mac plus this device's
+// approval status on it.
+type readyHost struct {
+	hostInfo
+	DeviceStatus string      `json:"deviceStatus"`
+	Cert         *proto.Cert `json:"cert,omitempty"`
+}
+
+func (h *hub) readyHostsLocked(devicePub string) []readyHost {
+	out := []readyHost{}
+	h.s.st.View(func(st *store.State) {
+		d := st.Devices[devicePub]
+		for _, hb := range st.Hosts {
+			rh := readyHost{hostInfo: h.liveInfoLocked(hb), DeviceStatus: store.StatusUnknown}
+			if a := d.Approval(hb.Pub); a != nil {
+				rh.DeviceStatus = a.Status
+				if a.Status == store.StatusApproved && a.Cert != nil {
+					ct := *a.Cert
+					rh.Cert = &ct
+				}
+			}
+			out = append(out, rh)
+		}
+	})
+	return out
+}
+
+// meHost is one entry of /api/me hosts (§10.4).
+type meHost struct {
+	hostInfo
+	ClaimedAt int64 `json:"claimedAt"`
+	LastSeen  int64 `json:"lastSeen"`
+}
+
+func (h *hub) meHosts() []meHost {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := h.s.now()
+	out := []meHost{}
+	h.s.st.View(func(st *store.State) {
+		for _, hb := range st.Hosts {
+			mh := meHost{hostInfo: h.liveInfoLocked(hb), ClaimedAt: unix(hb.ClaimedAt), LastSeen: unix(hb.LastSeen)}
+			if mh.Online {
+				mh.LastSeen = now.Unix()
+			}
+			out = append(out, mh)
+		}
+	})
+	return out
+}
+
+func (h *hub) broadcastHostStatusLocked(hostPub string) {
+	info, ok := h.hostInfoLocked(hostPub)
+	if !ok {
+		return
+	}
+	m := msg{"type": "host-status", "hostPub": hostPub, "online": info.Online, "state": info.State, "sessionDeviceName": info.SessionDeviceName}
 	for c := range h.clients {
 		c.sendMsg(m)
+	}
+}
+
+func (h *hub) broadcastHostsChangedLocked() {
+	for c := range h.clients {
+		c.sendMsg(msg{"type": "hosts-changed"})
 	}
 }
 
@@ -572,12 +676,12 @@ func (h *hub) broadcastDevicesChangedLocked() {
 	}
 }
 
-// approvedSet returns the set of approved device keys.
-func (h *hub) approvedSet() map[string]bool {
+// approvedOn returns the set of device keys approved on one Mac.
+func (h *hub) approvedOn(hostPub string) map[string]bool {
 	out := map[string]bool{}
 	h.s.st.View(func(st *store.State) {
 		for k, d := range st.Devices {
-			if d.Status == store.StatusApproved {
+			if a := d.Approval(hostPub); a != nil && a.Status == store.StatusApproved {
 				out[k] = true
 			}
 		}
@@ -585,10 +689,10 @@ func (h *hub) approvedSet() map[string]bool {
 	return out
 }
 
-// toApproversLocked sends m to connected approved devices, except the
-// device the message is about (exclude).
-func (h *hub) toApproversLocked(m msg, exclude ...string) {
-	approved := h.approvedSet()
+// toApproversLocked sends m to connected devices approved on hostPub, except
+// the device the message is about (exclude).
+func (h *hub) toApproversLocked(hostPub string, m msg, exclude ...string) {
+	approved := h.approvedOn(hostPub)
 	for _, x := range exclude {
 		delete(approved, x)
 	}
@@ -607,9 +711,11 @@ func (h *hub) toDeviceLocked(devicePub string, m msg) {
 	}
 }
 
-func (s *Server) deviceStatus(pub string) string {
+// approvalStatus is a device's status on one Mac (store mirror of the Mac's
+// signed decisions).
+func (s *Server) approvalStatus(devicePub, hostPub string) string {
 	status := store.StatusUnknown
-	s.st.View(func(st *store.State) { status = st.DeviceStatus(pub) })
+	s.st.View(func(st *store.State) { status = st.ApprovalStatus(devicePub, hostPub) })
 	return status
 }
 
@@ -626,55 +732,17 @@ func (s *Server) touchDevice(pub string, force bool) {
 	})
 }
 
-// pendingCommit returns the claim commit of a connected, unclaimed host.
-func (h *hub) pendingCommit(hostPub string) ([]byte, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	c := h.pendingHosts[hostPub]
-	if c == nil || c.closing() {
-		return nil, false
-	}
-	return append([]byte(nil), c.claimCommit...), true
-}
-
-// completeClaim binds the pending host atomically with the store mutation,
-// promotes its connection and forwards setup-device to it.
-func (h *hub) completeClaim(hostPub string, sd setupDevice, mutate func(st *store.State, hostName string) error) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	c := h.pendingHosts[hostPub]
-	if c == nil || c.closing() {
-		return errHostGone
-	}
-	if err := h.s.st.Update(func(st *store.State) error { return mutate(st, c.hostName) }); err != nil {
-		return err
-	}
-	delete(h.pendingHosts, hostPub)
-	for _, other := range h.pendingHosts {
-		other.fail("already-claimed")
-	}
-	h.pendingHosts = map[string]*conn{}
-	c.bound, c.claimCommit = true, nil
-	h.host = c
-	h.hostState = hostAvailable
-	c.sendMsg(msg{"type": "host-ready", "claimed": true, "origin": h.s.cfg.Origin, "iceServers": h.s.iceServers()})
-	sd.expires = h.s.now().Add(setupResendTTL)
-	h.setup = &sd
-	h.sendSetupLocked()
-	h.broadcastHostStatusLocked()
-	return nil
-}
-
-func (h *hub) sendSetupLocked() {
-	sd := h.setup
-	if sd == nil || h.host == nil {
-		return
-	}
-	if !h.s.now().Before(sd.expires) || h.s.deviceStatus(sd.DevicePub) != store.StatusPending {
-		h.setup = nil
-		return
-	}
-	h.host.sendMsg(msg{"type": "setup-device", "devicePub": sd.DevicePub, "name": sd.Name, "kind": sd.Kind, "setupMac": sd.SetupMac})
+// touchHost records when a bound Mac was last connected.
+func (s *Server) touchHost(pub string) {
+	now := s.now()
+	_ = s.st.Update(func(st *store.State) error {
+		hb := st.Host(pub)
+		if hb == nil {
+			return store.ErrNoChange
+		}
+		hb.LastSeen = now
+		return nil
+	})
 }
 
 // expire runs the in-memory expiry sweep.
@@ -684,25 +752,39 @@ func (h *hub) expire(now time.Time) {
 	for id, p := range h.pairings {
 		if now.Sub(p.created) >= pairingTTL {
 			if p.conn != nil {
-				p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "reason": "expired"})
+				p.conn.sendMsg(msg{"type": "pair-denied", "requestId": id, "hostPub": p.hostPub, "reason": "expired"})
 			}
-			if p.revealed {
-				h.toApproversLocked(msg{"type": "approval-closed", "requestId": id}, p.devicePub)
+			if p.revealed && !p.bad {
+				h.toApproversLocked(p.hostPub, msg{"type": "approval-closed", "requestId": id, "hostPub": p.hostPub}, p.devicePub)
 			}
 			delete(h.pairings, id)
 		}
 	}
 	for id, rs := range h.sessions {
 		if !rs.accepted && now.Sub(rs.created) >= sessionRequestTTL {
-			rs.client.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": "timeout"})
-			if h.host != nil {
-				h.host.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": "timeout"})
+			rs.client.sendMsg(msg{"type": "session-end", "sessionId": id, "hostPub": rs.hostPub, "reason": "timeout"})
+			if hc := h.hosts[rs.hostPub]; hc != nil {
+				hc.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": "timeout"})
 			}
 			delete(h.sessions, id)
 		}
 	}
 	if h.setup != nil && !now.Before(h.setup.expires) {
 		h.setup = nil
+	}
+	claimed := h.s.claimed()
+	for pub, c := range h.pendingHosts {
+		for dev, j := range c.joins {
+			if !now.Before(j.expires) {
+				delete(c.joins, dev)
+			}
+		}
+		// A Mac waiting to join a claimed server is kept for 30 minutes; it
+		// reconnects (and shows a fresh code) if it is still waiting.
+		if claimed && now.Sub(c.pendingSince) >= pendingJoinTTL {
+			delete(h.pendingHosts, pub)
+			c.fail("join-expired")
+		}
 	}
 	for c := range h.clients {
 		if !h.s.sessionValid(c.sessionHash) {
@@ -711,376 +793,6 @@ func (h *hub) expire(now time.Time) {
 		}
 		h.s.touchSession(c.sessionHash)
 	}
-}
-
-// ---- host messages ----
-
-func (h *hub) onHost(c *conn, m *inMsg) bool {
-	if c.stage == 0 {
-		if m.Type != "host-auth" {
-			c.fail("auth-required")
-			return false
-		}
-		return h.hostAuth(c, m)
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if !c.bound || h.host != c {
-		if m.Type == "claim-commit" && h.pendingHosts[c.hostPub] == c {
-			if b, err := proto.UnB64Len(m.ClaimCommit, 32); err == nil {
-				c.claimCommit = b
-			} else {
-				c.sendErr("bad-request", "for", m.Type)
-			}
-			return true
-		}
-		c.sendErr("not-bound", "for", m.Type)
-		return true
-	}
-	switch m.Type {
-	case "trust-sync":
-		h.trustSyncLocked(c, m)
-	case "host-status":
-		h.hostStatusLocked(c, m)
-	case "pair-challenge":
-		h.pairChallengeLocked(c, m)
-	case "pair-result":
-		h.pairResultLocked(c, m)
-	case "device-approved":
-		h.deviceApprovedLocked(c, m)
-	case "device-revoked":
-		h.deviceRevokedLocked(c, m)
-	case "session-accept", "session-reject", "answer", "ice", "session-end":
-		h.hostSessionLocked(c, m)
-	case "claim-commit":
-		// Already claimed: nothing to do.
-	default:
-		c.sendErr("unknown-type", "for", m.Type)
-	}
-	return true
-}
-
-func (h *hub) hostAuth(c *conn, m *inMsg) bool {
-	s := h.s
-	pub, ok := b64Key(m.HostPub)
-	sig, err := proto.UnB64Len(m.Sig, proto.SignatureSize)
-	if !ok || err != nil {
-		c.fail("bad-request")
-		return false
-	}
-	if !proto.Verify(pub, sig, proto.LabelHostAuth, proto.Str(s.cfg.Origin), c.nonce) {
-		s.authFailureIP(c.ip, "host signature")
-		c.fail("bad-signature")
-		return false
-	}
-	if s.cfg.HostPubPin != nil && string(pub) != string(s.cfg.HostPubPin) {
-		s.authFailureIP(c.ip, "host key not pinned")
-		c.fail("host-not-allowed")
-		return false
-	}
-	var commit []byte
-	if m.ClaimCommit != "" {
-		if commit, err = proto.UnB64Len(m.ClaimCommit, 32); err != nil {
-			c.fail("bad-request")
-			return false
-		}
-	}
-	name, ok := cleanName(m.Name)
-	if !ok {
-		name = "Mac"
-	}
-	pubB64 := proto.B64(pub)
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var claimed bool
-	var boundPub, boundName string
-	s.st.View(func(st *store.State) {
-		claimed = st.Claimed()
-		if st.Host != nil {
-			boundPub, boundName = st.Host.Pub, st.Host.Name
-		}
-	})
-	c.stage = 1
-	c.hostPub, c.hostName = pubB64, name
-	if claimed {
-		if boundPub != pubB64 {
-			c.fail("already-claimed")
-			return false
-		}
-		if old := h.host; old != nil {
-			h.host = nil
-			old.fail("replaced")
-			h.hostGoneLocked("host-reconnected")
-		}
-		c.authed, c.bound = true, true
-		h.preAuth--
-		h.host = c
-		h.hostState = hostAvailable
-		if name != boundName {
-			_ = s.st.Update(func(st *store.State) error {
-				if st.Host == nil {
-					return store.ErrNoChange
-				}
-				st.Host.Name = name
-				return nil
-			})
-		}
-		c.sendMsg(msg{"type": "host-ready", "claimed": true, "origin": s.cfg.Origin, "iceServers": s.iceServers()})
-		h.sendSetupLocked()
-		h.broadcastHostStatusLocked()
-		s.log.Info("host connected", "host", proto.Fingerprint(pub))
-		return true
-	}
-	if old := h.pendingHosts[pubB64]; old != nil {
-		delete(h.pendingHosts, pubB64)
-		old.fail("replaced")
-	} else {
-		sameIP := 0
-		for _, pc := range h.pendingHosts {
-			if limitKey(pc.ip) == limitKey(c.ip) {
-				sameIP++
-			}
-		}
-		if len(h.pendingHosts) >= maxPendingHosts || sameIP >= maxPendingPerIP {
-			c.fail("too-many-pending")
-			return false
-		}
-	}
-	c.authed = true
-	c.claimCommit = commit
-	h.preAuth--
-	h.pendingHosts[pubB64] = c
-	c.sendMsg(msg{"type": "host-ready", "claimed": false, "origin": s.cfg.Origin, "iceServers": s.iceServers()})
-	s.log.Info("unclaimed host connected", "host", proto.Fingerprint(pub))
-	return true
-}
-
-func (h *hub) hostPubBytes(c *conn) []byte {
-	b, _ := proto.UnB64Len(c.hostPub, proto.PubKeySize)
-	return b
-}
-
-const maxTrustEntries = 1000
-
-func (h *hub) trustSyncLocked(c *conn, m *inMsg) {
-	s := h.s
-	if len(m.Certs) > maxTrustEntries || len(m.Revocations) > maxTrustEntries {
-		c.sendErr("too-large", "for", m.Type)
-		return
-	}
-	hostPub := h.hostPubBytes(c)
-	certs := map[string]proto.Cert{}
-	for _, ct := range m.Certs {
-		if err := ct.Verify(hostPub); err != nil {
-			s.log.Warn("trust-sync: ignoring invalid cert")
-			continue
-		}
-		certs[ct.DevicePub] = ct
-	}
-	revs := map[string]bool{}
-	for _, rv := range m.Revocations {
-		if err := rv.Verify(hostPub); err != nil {
-			s.log.Warn("trust-sync: ignoring invalid revocation")
-			continue
-		}
-		revs[rv.DevicePub] = true
-	}
-	now := s.now()
-	var revokedNow []string
-	changed := false
-	_ = s.st.Update(func(st *store.State) error {
-		for pub, d := range st.Devices {
-			ct, isCert := certs[pub]
-			switch {
-			case revs[pub]:
-				if d.Status != store.StatusRevoked {
-					d.Status, d.RevokedAt, d.Cert = store.StatusRevoked, now, nil
-					revokedNow = append(revokedNow, pub)
-					changed = true
-				}
-			case isCert:
-				nc := ct
-				name, kind := certNameKind(ct, d.Name, d.Kind)
-				if d.Status != store.StatusApproved || d.Cert == nil || *d.Cert != nc || d.Name != name || d.Kind != kind {
-					d.Status, d.Cert, d.Name, d.Kind, d.RevokedAt = store.StatusApproved, &nc, name, kind, time.Time{}
-					changed = true
-				}
-			case d.Status == store.StatusApproved:
-				d.Status, d.RevokedAt, d.Cert = store.StatusRevoked, now, nil
-				revokedNow = append(revokedNow, pub)
-				changed = true
-			}
-		}
-		for pub, ct := range certs {
-			if _, ok := st.Devices[pub]; ok || revs[pub] {
-				continue
-			}
-			nc := ct
-			name, kind := certNameKind(ct, "Device", "unknown")
-			st.Devices[pub] = &store.Device{Pub: pub, Name: name, Kind: kind, Status: store.StatusApproved, Cert: &nc, CreatedAt: now}
-			changed = true
-		}
-		for pub := range revs {
-			if _, ok := st.Devices[pub]; ok {
-				continue
-			}
-			st.Devices[pub] = &store.Device{Pub: pub, Name: "Removed device", Kind: "unknown", Status: store.StatusRevoked, CreatedAt: now, RevokedAt: now}
-			changed = true
-		}
-		if !changed {
-			return store.ErrNoChange
-		}
-		st.AddEvent(store.Event{Time: now, Type: "trust-sync"})
-		return nil
-	})
-	for _, pub := range revokedNow {
-		h.endDeviceSessionsLocked(pub, "revoked")
-	}
-	if changed {
-		h.broadcastDevicesChangedLocked()
-	}
-}
-
-func certNameKind(ct proto.Cert, defName, defKind string) (string, string) {
-	name, ok := cleanName(ct.Name)
-	if !ok {
-		name = defName
-	}
-	kind := ct.Kind
-	if !validKind(kind) {
-		kind = defKind
-	}
-	return name, kind
-}
-
-// endDeviceSessionsLocked stops relaying for a device that lost trust.
-func (h *hub) endDeviceSessionsLocked(devicePub, reason string) {
-	for id, rs := range h.sessions {
-		if rs.devicePub != devicePub {
-			continue
-		}
-		rs.client.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": reason})
-		if h.host != nil {
-			h.host.sendMsg(msg{"type": "session-end", "sessionId": id, "reason": reason})
-		}
-		delete(h.sessions, id)
-	}
-}
-
-func (h *hub) hostStatusLocked(c *conn, m *inMsg) {
-	switch m.State {
-	case hostAvailable, hostInSession, hostBlocked:
-	default:
-		c.sendErr("bad-request", "for", m.Type)
-		return
-	}
-	dev := ""
-	if m.SessionDeviceName != "" {
-		if n, ok := cleanName(m.SessionDeviceName); ok {
-			dev = n
-		}
-	}
-	h.hostState, h.hostSessDev = m.State, dev
-	h.broadcastHostStatusLocked()
-}
-
-func (h *hub) deviceApprovedLocked(c *conn, m *inMsg) {
-	s := h.s
-	if m.Cert == nil || m.Cert.Verify(h.hostPubBytes(c)) != nil {
-		c.sendErr("bad-cert", "for", m.Type)
-		return
-	}
-	ct := *m.Cert
-	now := s.now()
-	var name string
-	err := s.st.Update(func(st *store.State) error {
-		d, ok := st.Devices[ct.DevicePub]
-		if !ok || d.Status == store.StatusRevoked {
-			return errNotFound
-		}
-		name, d.Kind = certNameKind(ct, d.Name, d.Kind)
-		d.Name, d.Status, d.Cert = name, store.StatusApproved, &ct
-		st.AddEvent(store.Event{Time: now, Type: "device-approved", Device: name})
-		return nil
-	})
-	if err != nil {
-		c.sendErr("unknown-device", "for", m.Type)
-		return
-	}
-	if h.setup != nil && h.setup.DevicePub == ct.DevicePub {
-		h.setup = nil
-	}
-	h.toDeviceLocked(ct.DevicePub, msg{"type": "pair-approved", "cert": ct})
-	h.broadcastDevicesChangedLocked()
-}
-
-func (h *hub) deviceRevokedLocked(c *conn, m *inMsg) {
-	s := h.s
-	if m.Revocation == nil || m.Revocation.Verify(h.hostPubBytes(c)) != nil {
-		c.sendErr("bad-revocation", "for", m.Type)
-		return
-	}
-	pub := m.Revocation.DevicePub
-	now := s.now()
-	_ = s.st.Update(func(st *store.State) error {
-		d, ok := st.Devices[pub]
-		if !ok {
-			d = &store.Device{Pub: pub, Name: "Removed device", Kind: "unknown", CreatedAt: now}
-			st.Devices[pub] = d
-		}
-		d.Status, d.RevokedAt, d.Cert = store.StatusRevoked, now, nil
-		st.AddEvent(store.Event{Time: now, Type: "device-revoked", Device: d.Name})
-		return nil
-	})
-	h.endDeviceSessionsLocked(pub, "revoked")
-	h.broadcastDevicesChangedLocked()
-}
-
-func (h *hub) hostSessionLocked(c *conn, m *inMsg) {
-	rs := h.sessions[m.SessionID]
-	if rs == nil {
-		c.sendErr("unknown-session", "sessionId", m.SessionID)
-		return
-	}
-	out := msg{"type": m.Type, "sessionId": rs.id}
-	switch m.Type {
-	case "session-accept":
-		if rs.accepted {
-			c.sendErr("bad-state", "sessionId", rs.id)
-			return
-		}
-		if _, err := proto.UnB64Len(m.HostNonce, proto.NonceSize); err != nil {
-			c.sendErr("bad-request", "sessionId", rs.id)
-			return
-		}
-		rs.accepted = true
-		out["hostNonce"] = m.HostNonce
-	case "session-reject":
-		out["reason"] = cleanReason(m.Reason, "error")
-		delete(h.sessions, rs.id)
-	case "answer":
-		if !rs.accepted || len(m.Sdp) == 0 || len(m.Sdp) > maxSDP {
-			c.sendErr("bad-request", "sessionId", rs.id)
-			return
-		}
-		if _, err := proto.UnB64Len(m.Sig, proto.SignatureSize); err != nil {
-			c.sendErr("bad-request", "sessionId", rs.id)
-			return
-		}
-		out["sdp"], out["sig"] = m.Sdp, m.Sig
-	case "ice":
-		cand, ok := cleanCandidate(m.Candidate)
-		if !ok {
-			c.sendErr("bad-request", "sessionId", rs.id)
-			return
-		}
-		out["candidate"] = cand
-	case "session-end":
-		out["reason"] = cleanReason(m.Reason, "ended")
-		delete(h.sessions, rs.id)
-	}
-	rs.client.sendMsg(out)
 }
 
 // cleanCandidate accepts an RTCIceCandidateInit object (or null) of bounded size.

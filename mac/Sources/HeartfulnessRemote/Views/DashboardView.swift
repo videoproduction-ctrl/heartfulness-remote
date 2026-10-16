@@ -78,11 +78,22 @@ private struct StatusPage: View {
         Page(title: "Status") {
             statusCard
             problems
+            if model.needsJoin {
+                joinCard
+            }
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
                     LabeledContent("Server") {
                         Text(model.settings.serverURL.isEmpty ? "Not set up yet" : model.serverDisplayName)
                             .textSelection(.enabled)
+                    }
+                    LabeledContent("Mac ID") {
+                        Text(model.macIDText.isEmpty ? "—" : model.macIDText)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    LabeledContent("Your account") {
+                        Text(accountText)
                     }
                     LabeledContent("This Mac's key") {
                         Text(model.hostFingerprint.isEmpty ? "—" : model.hostFingerprint)
@@ -167,9 +178,29 @@ private struct StatusPage: View {
         }
     }
 
+    /// The server has no owner yet: the first phone still has to be paired.
+    private var showPairButton: Bool {
+        model.state.server == .online && !model.state.claimed && model.agentRunning
+    }
+
+    /// "Not set up yet" / "Not added yet" / "This Mac is in your account".
+    private var accountText: String {
+        if model.settings.serverURL.isEmpty { return "—" }
+        switch model.state.account {
+        case .serverNotSetUp: return "Not set up yet — pair your phone first"
+        case .notInAccount: return "Not added yet"
+        case .inAccount: return "This Mac is in your account"
+        }
+    }
+
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             StatusHeader(summary: model.summary, size: .large)
+            if let line = model.macIDLine {
+                MacIDLabel(line: line, large: true)
+                    .padding(.leading, 90)   // lines up with the status title
+                    .padding(.top, -8)
+            }
             if let session = model.state.session {
                 SessionControls(session: session, onDisconnect: { model.disconnectNow() }, large: true)
             }
@@ -177,14 +208,27 @@ private struct StatusPage: View {
                 Divider()
                 BlockConnectionsToggle()
             }
-            if model.state.server == .online && !model.state.claimed && model.agentRunning {
-                Button {
-                    model.openSetup(steps: [.pairPhone])
-                } label: {
-                    Label("Pair your phone…", systemImage: "qrcode")
+            if showPairButton || !model.settings.serverURL.isEmpty {
+                HStack(spacing: 12) {
+                    if showPairButton {
+                        Button {
+                            model.openSetup(steps: [.pairPhone])
+                        } label: {
+                            Label("Pair your phone…", systemImage: "qrcode")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    }
+                    if !model.settings.serverURL.isEmpty {
+                        Button {
+                            model.openWebClient()
+                        } label: {
+                            Label(AccountText.connectToAnother, systemImage: "arrow.up.right.square")
+                        }
+                        .controlSize(.large)
+                        .help(AccountText.connectToAnotherHelp)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
         }
         .padding(20)
@@ -194,6 +238,30 @@ private struct StatusPage: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(model.summary.kind.color.opacity(0.45), lineWidth: 2)
         )
+    }
+
+    /// Shown while the server has an owner but this Mac isn't in the account yet.
+    private var joinCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(AccountText.addSubtitle)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let image = model.joinQRCode(), let code = model.state.joinCode {
+                    JoinMacPanel(qrImage: image, macID: model.macIDText, joinCode: code)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Preparing a code…")
+                    }
+                    Button("Make a New Code") { model.newSetupCode() }
+                }
+            }
+            .padding(6)
+        } label: {
+            Label(AccountText.addTitle, systemImage: "plus.circle")
+        }
     }
 
     @ViewBuilder private var problems: some View {
@@ -525,7 +593,9 @@ private struct SettingsPage: View {
                 }
                 LabeledContent("Kill switch shortcut", value: model.hotKeyAvailable ? "⌃⌥⌘K" : "Not available")
                 Button("Show Setup Again…") { model.openSetup() }
-                Button("New Phone Setup Code…") { newSetupCode() }
+                Button(model.state.account == .notInAccount ? "New Code to Add This Mac…" : "New Phone Setup Code…") {
+                    newSetupCode()
+                }
             } header: {
                 Text("This Mac")
             }
@@ -557,10 +627,10 @@ private struct SettingsPage: View {
         } message: {
             Text("The current device list and access log are kept as evidence next to the new ones. You will pair your phone and devices again.")
         }
-        .alert("Your phone is already paired", isPresented: $showClaimedInfo) {
+        .alert("This Mac is already in your account", isPresented: $showClaimedInfo) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Your server already has an owner, so no setup code is needed. To add another phone or computer, open your web address on it, sign in with your passkey and approve it here or on your phone.")
+            Text("No setup code is needed. To add another phone or computer, open your web address on it, sign in with your passkey and approve it here or on your phone.")
         }
     }
 
@@ -588,7 +658,7 @@ private struct SettingsPage: View {
     }
 
     private func newSetupCode() {
-        if model.state.claimed {
+        if model.state.account == .inAccount {
             showClaimedInfo = true
         } else {
             model.newSetupCode()

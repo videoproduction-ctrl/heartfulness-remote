@@ -65,12 +65,17 @@ public struct HostStatusSummary: Equatable, Sendable {
         }
         switch state.server {
         case .online:
-            if !state.claimed {
+            switch state.account {
+            case .serverNotSetUp:
                 return HostStatusSummary(kind: .online, title: "Your Mac is ready",
                                          detail: "One more step: pair your phone (see the setup window).")
+            case .notInAccount:
+                return HostStatusSummary(kind: .online, title: "Almost ready",
+                                         detail: "One more step: add this Mac to your account.")
+            case .inAccount:
+                return HostStatusSummary(kind: .online, title: "Your Mac is ready",
+                                         detail: "Approved devices can connect through \(serverName).")
             }
-            return HostStatusSummary(kind: .online, title: "Your Mac is ready",
-                                     detail: "Approved devices can connect through \(serverName).")
         case .connecting:
             return HostStatusSummary(kind: .offline, title: offlineTitle, detail: "Connecting to \(serverName)…")
         case .offline:
@@ -94,7 +99,7 @@ public enum ServerErrorText {
     public static func message(for code: String) -> String {
         switch code {
         case "already-claimed":
-            return "Your server is already set up with a different Mac. If this is your only Mac, reset the server (see “Fix offline” in the user guide)."
+            return "Your server is already set up with a different Mac and doesn't accept more Macs yet. Update your server to the latest version — or, if this is your only Mac, reset the server (see “Fix offline” in the user guide)."
         case "host-not-allowed":
             return "Your server is set to accept only a different Mac."
         case "bad-signature":
@@ -119,6 +124,34 @@ public enum ServerErrorText {
             return "Your server reported a problem (\(code)). Trying again automatically."
         }
     }
+}
+
+// MARK: - Your account (several Macs)
+
+/// Plain-language text for adding this Mac to the owner's account (PROTOCOL.md §10).
+public enum AccountText {
+    /// "Mac ID 482 913 557", or nil while the ID isn't known.
+    public static func macIDLine(_ macId: String) -> String? {
+        guard MacIDFormatter.digits(macId) != nil else { return nil }
+        return "Mac ID " + MacIDFormatter.format(macId)
+    }
+
+    public static let addTitle = "Add this Mac to your account"
+    public static let addSubtitle = "Your server already has an owner. To use this Mac from your other devices, add it to your account once — from a phone or computer you already use with Heartfulness Remote."
+    public static let scanSteps = [
+        "On your phone, open the Camera app and scan this code.",
+        "Tap the link that appears. Your phone must already be signed in to Heartfulness Remote.",
+        "Confirm with your passkey (Face ID, Touch ID or fingerprint).",
+        "This page updates by itself when it's done.",
+    ]
+    public static let typeInstead = "Or, on any device you already use, choose “Add a Mac” and type these:"
+    public static let codePrivacy = "Keep this code private. It works only once, and only for this Mac."
+    public static let inAccountTitle = "This Mac is in your account ✓"
+    public static func inAccountDetail(serverName: String) -> String {
+        "To connect to it, open \(serverName) on any of your devices and sign in with your passkey. A device you haven't used with this Mac before asks once for your approval."
+    }
+    public static let connectToAnother = "Connect to Another Mac…"
+    public static let connectToAnotherHelp = "Opens your Heartfulness Remote web page in your browser, where you can control your other Macs."
 }
 
 // MARK: - Sessions
@@ -290,6 +323,15 @@ public struct EventNotification: Equatable, Sendable {
             return EventNotification(title: "Phone setup failed",
                                      body: "A device tried to finish the setup with a wrong code. If that wasn't you, nothing happened — no access was given.",
                                      identifier: "hr.setup")
+        case "joined-account":
+            // Same identifier as "device-added", which arrives just before: this one replaces it.
+            return EventNotification(title: "This Mac is in your account",
+                                     body: "\(device) added this Mac and can connect to it now. Your other devices ask once for your approval the first time they connect.",
+                                     identifier: "hr.device.\(event.device?.pub ?? device)")
+        case "removed-from-account":
+            return EventNotification(title: "This Mac was removed from your account",
+                                     body: "Your devices can't reach it through your server any more. To add it again, open Heartfulness Remote → Status.",
+                                     identifier: "hr.account")
         default:
             return nil
         }
@@ -318,6 +360,8 @@ public enum AccessLogText {
         case "agent-start": return "Heartfulness Remote started"
         case "offer-rejected": return "Connection attempt refused"
         case "approval-rejected": return "Invalid approval refused"
+        case "joined-account": return "Added to your account"
+        case "removed-from-account": return "Removed from your account"
         default: return event
         }
     }

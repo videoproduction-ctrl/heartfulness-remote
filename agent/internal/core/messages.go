@@ -48,8 +48,15 @@ type inMsg struct {
 	Reason      string          `json:"reason"`
 	IceServers  json.RawMessage `json:"iceServers"`
 	Claimed     bool            `json:"claimed"`
-	Origin      string          `json:"origin"`
-	Code        string          `json:"code"`
+	// Joined is nil for servers older than HR1.1 (one Mac per server: a
+	// claimed server then always means "this Mac is the owner's").
+	Joined *bool  `json:"joined"`
+	MacID  string `json:"macId"`
+	// HostPub is carried by messages the server routes to a Mac (§10.3);
+	// when present it must be this Mac's key.
+	HostPub string `json:"hostPub"`
+	Origin  string `json:"origin"`
+	Code    string `json:"code"`
 }
 
 type hostAuthMsg struct {
@@ -89,9 +96,13 @@ type pairResultMsg struct {
 	Reason    string      `json:"reason,omitempty"`
 }
 
+// deviceApprovedMsg answers setup-device (§4 claim and §10.2 join). HostMac =
+// HMAC(Ka, TBS("HR1/join-confirm", hostPub, devicePub)) proves to the device
+// that this key belongs to the Mac that showed the code.
 type deviceApprovedMsg struct {
-	Type string     `json:"type"`
-	Cert proto.Cert `json:"cert"`
+	Type    string     `json:"type"`
+	Cert    proto.Cert `json:"cert"`
+	HostMac string     `json:"hostMac"`
 }
 
 type deviceRevokedMsg struct {

@@ -1,7 +1,8 @@
 // Package server implements the Heartfulness Remote signaling and
-// authentication server (docs/PROTOCOL.md §4–§7): passkey login, the claim
-// (bootstrap) flow, device pairing relay, session signaling relay, TURN
-// credentials, rate limiting and lockout. It never sees screen data and
+// authentication server (docs/PROTOCOL.md §4–§7, §10): passkey login, the
+// claim (bootstrap) flow, adding further Macs ("join"), per-Mac device
+// pairing relay, session signaling relay, TURN credentials, rate limiting
+// and lockout. It never sees screen data and
 // cannot impersonate the Mac or an approved device: every trust decision it
 // mirrors is backed by an Ed25519 signature it verifies.
 package server
@@ -137,6 +138,10 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/link/start", s.handleLinkStart)
 	m.HandleFunc("POST /api/link/approve", s.handleLinkApprove)
 	m.HandleFunc("POST /api/link/poll", s.handleLinkPoll)
+	m.HandleFunc("GET /api/hosts/pending", s.handleHostsPending)
+	m.HandleFunc("POST /api/hosts/join/begin", s.handleJoinBegin)
+	m.HandleFunc("POST /api/hosts/join/finish", s.handleJoinFinish)
+	m.HandleFunc("POST /api/hosts/remove", s.handleHostRemove)
 	m.HandleFunc("GET /ws/host", s.handleWSHost)
 	m.HandleFunc("GET /ws/client", s.handleWSClient)
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, http.StatusNotFound, "not-found") })
@@ -240,8 +245,8 @@ func (s *Server) housekeeping() {
 }
 
 // Purge runs the retention job: events older than 7 days, expired sessions,
-// pending devices older than 24 h, old revocations, and expired in-memory
-// flows and link codes.
+// pending approvals older than 24 h, old revocations, devices no Mac vouches
+// for, and expired in-memory flows and link codes.
 func (s *Server) Purge() {
 	now := s.now()
 	var res store.PurgeResult
@@ -257,7 +262,8 @@ func (s *Server) Purge() {
 	}
 	s.mem.expire(now)
 	if res != (store.PurgeResult{}) {
-		s.log.Info("purged", "events", res.Events, "sessions", res.Sessions, "pendingDevices", res.PendingDevices, "revokedDevices", res.RevokedDevices)
+		s.log.Info("purged", "events", res.Events, "sessions", res.Sessions, "pendingApprovals", res.PendingApprovals,
+			"revokedApprovals", res.RevokedApprovals, "devices", res.Devices)
 	}
 }
 

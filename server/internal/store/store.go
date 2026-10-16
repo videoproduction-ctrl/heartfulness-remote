@@ -3,6 +3,10 @@
 // rename, mode 0600) and guarded by a mutex. It never holds screen data,
 // SDPs, raw tokens, cookies or setup claims: sessions are stored as SHA-256
 // hashes only.
+//
+// State version 2 (PROTOCOL.md §10, HR1.1) holds one owner, up to MaxHosts
+// Macs ("hosts") and, per device, one approval per Mac. A version-1 file (a
+// single "host" and one status per device) is migrated when it is read.
 package store
 
 import (
@@ -43,8 +47,9 @@ const (
 	CookieLifetime    = 7 * 24 * time.Hour
 	BearerLifetime    = 30 * 24 * time.Hour
 	MaxEvents         = 2000
+	MaxHosts          = 20 // Macs per owner account (PROTOCOL.md §10)
 	stateFile         = "state.json"
-	stateVersion      = 1
+	stateVersion      = 2
 )
 
 // Passkey is one WebAuthn credential of the owner.
@@ -62,23 +67,48 @@ type Owner struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
-// HostBinding records the Mac that claimed this server.
+// HostBinding records one Mac bound to the owner account.
 type HostBinding struct {
 	Pub       string    `json:"pub"` // b64 Ed25519
 	Name      string    `json:"name"`
+	MacID     string    `json:"macId"` // proto.MacID(pub), display only
 	ClaimedAt time.Time `json:"claimedAt"`
+	LastSeen  time.Time `json:"lastSeen,omitzero"`
 }
 
-// Device mirrors the Mac's trust decision about a device key.
-type Device struct {
-	Pub       string      `json:"pub"`
-	Name      string      `json:"name"`
-	Kind      string      `json:"kind"`
-	Status    string      `json:"status"`
+// Approval mirrors one Mac's trust decision about a device key.
+type Approval struct {
+	Status    string      `json:"status"` // pending | approved | revoked
 	Cert      *proto.Cert `json:"cert,omitempty"`
 	CreatedAt time.Time   `json:"createdAt"`
-	LastSeen  time.Time   `json:"lastSeen,omitzero"`
 	RevokedAt time.Time   `json:"revokedAt,omitzero"`
+}
+
+// Device is a client device key known to the server, with one approval per
+// Mac (keyed by the Mac's b64 host key).
+type Device struct {
+	Pub       string               `json:"pub"`
+	Name      string               `json:"name"`
+	Kind      string               `json:"kind"`
+	Approvals map[string]*Approval `json:"approvals"`
+	CreatedAt time.Time            `json:"createdAt"`
+	LastSeen  time.Time            `json:"lastSeen,omitzero"`
+}
+
+// Approval returns the device's approval for hostPub, or nil.
+func (d *Device) Approval(hostPub string) *Approval {
+	if d == nil {
+		return nil
+	}
+	return d.Approvals[hostPub]
+}
+
+// SetApproval replaces the device's approval for hostPub.
+func (d *Device) SetApproval(hostPub string, a *Approval) {
+	if d.Approvals == nil {
+		d.Approvals = map[string]*Approval{}
+	}
+	d.Approvals[hostPub] = a
 }
 
 // Session is a login session. Only the SHA-256 of the token is stored.
@@ -114,14 +144,61 @@ type Event struct {
 type State struct {
 	Version  int                 `json:"version"`
 	Owner    *Owner              `json:"owner,omitempty"`
-	Host     *HostBinding        `json:"host,omitempty"`
+	Hosts    []*HostBinding      `json:"hosts"`
 	Devices  map[string]*Device  `json:"devices"`
 	Sessions map[string]*Session `json:"sessions"`
 	Events   []Event             `json:"events"`
 }
 
-// Claimed reports whether an owner and host are bound.
-func (s *State) Claimed() bool { return s.Owner != nil && s.Host != nil }
+// Claimed reports whether an owner exists and at least one Mac is bound.
+func (s *State) Claimed() bool { return s.Owner != nil && len(s.Hosts) > 0 }
+
+// Host returns the bound Mac with this key, or nil.
+func (s *State) Host(pub string) *HostBinding {
+	for _, h := range s.Hosts {
+		if h.Pub == pub {
+			return h
+		}
+	}
+	return nil
+}
+
+// AddHost binds a Mac (no-op if already bound). It fails beyond MaxHosts.
+func (s *State) AddHost(h HostBinding) error {
+	if s.Host(h.Pub) != nil {
+		return nil
+	}
+	if len(s.Hosts) >= MaxHosts {
+		return ErrTooManyHosts
+	}
+	if h.MacID == "" {
+		h.MacID = macID(h.Pub)
+	}
+	s.Hosts = append(s.Hosts, &h)
+	return nil
+}
+
+// RemoveHost unbinds a Mac and drops every device approval for it. Devices
+// left with no approval at all are deleted. Reports whether it was bound.
+func (s *State) RemoveHost(pub string) bool {
+	idx := -1
+	for i, h := range s.Hosts {
+		if h.Pub == pub {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	s.Hosts = append(s.Hosts[:idx:idx], s.Hosts[idx+1:]...)
+	for k, d := range s.Devices {
+		delete(d.Approvals, pub)
+		if len(d.Approvals) == 0 {
+			delete(s.Devices, k)
+		}
+	}
+	return true
+}
 
 // AddEvent appends an audit event, capping the list.
 func (s *State) AddEvent(e Event) {
@@ -131,18 +208,32 @@ func (s *State) AddEvent(e Event) {
 	}
 }
 
-// DeviceStatus returns the status of a device key.
-func (s *State) DeviceStatus(pub string) string {
-	if d, ok := s.Devices[pub]; ok {
-		return d.Status
+// ApprovalStatus returns a device's status on one Mac ("unknown" if none).
+func (s *State) ApprovalStatus(devicePub, hostPub string) string {
+	if a := s.Devices[devicePub].Approval(hostPub); a != nil {
+		return a.Status
 	}
 	return StatusUnknown
 }
 
-// Reset wipes owner, passkeys, host binding, devices and sessions.
+// ApprovedOnAny reports whether the device is approved on at least one bound Mac.
+func (s *State) ApprovedOnAny(devicePub string) bool {
+	d := s.Devices[devicePub]
+	if d == nil {
+		return false
+	}
+	for _, h := range s.Hosts {
+		if a := d.Approvals[h.Pub]; a != nil && a.Status == StatusApproved {
+			return true
+		}
+	}
+	return false
+}
+
+// Reset wipes owner, passkeys, Macs, devices and sessions.
 func (s *State) Reset(now time.Time) {
 	s.Owner = nil
-	s.Host = nil
+	s.Hosts = []*HostBinding{}
 	s.Devices = map[string]*Device{}
 	s.Sessions = map[string]*Session{}
 	s.Events = []Event{{Time: now, Type: "reset"}}
@@ -150,11 +241,11 @@ func (s *State) Reset(now time.Time) {
 
 // PurgeResult counts what Purge removed.
 type PurgeResult struct {
-	Events, Sessions, PendingDevices, RevokedDevices int
+	Events, Sessions, PendingApprovals, RevokedApprovals, Devices int
 }
 
-// Purge deletes old events, expired sessions, stale pending devices and old
-// revoked devices.
+// Purge deletes old events, expired sessions, stale pending approvals, old
+// revocations, and devices left without any approval.
 func (s *State) Purge(now time.Time) PurgeResult {
 	var r PurgeResult
 	kept := s.Events[:0]
@@ -173,13 +264,19 @@ func (s *State) Purge(now time.Time) PurgeResult {
 		}
 	}
 	for k, d := range s.Devices {
-		switch {
-		case d.Status == StatusPending && now.Sub(d.CreatedAt) >= PendingDeviceTTL:
+		for h, a := range d.Approvals {
+			switch {
+			case a.Status == StatusPending && now.Sub(a.CreatedAt) >= PendingDeviceTTL:
+				delete(d.Approvals, h)
+				r.PendingApprovals++
+			case a.Status == StatusRevoked && !a.RevokedAt.IsZero() && now.Sub(a.RevokedAt) >= RevokedRetention:
+				delete(d.Approvals, h)
+				r.RevokedApprovals++
+			}
+		}
+		if len(d.Approvals) == 0 {
 			delete(s.Devices, k)
-			r.PendingDevices++
-		case d.Status == StatusRevoked && !d.RevokedAt.IsZero() && now.Sub(d.RevokedAt) >= RevokedRetention:
-			delete(s.Devices, k)
-			r.RevokedDevices++
+			r.Devices++
 		}
 	}
 	return r
@@ -201,7 +298,75 @@ func (s *State) SortedDevices() []*Device {
 }
 
 func newState() *State {
-	return &State{Version: stateVersion, Devices: map[string]*Device{}, Sessions: map[string]*Session{}, Events: []Event{}}
+	return &State{Version: stateVersion, Hosts: []*HostBinding{}, Devices: map[string]*Device{}, Sessions: map[string]*Session{}, Events: []Event{}}
+}
+
+// ErrTooManyHosts is returned when binding more than MaxHosts Macs.
+var ErrTooManyHosts = errors.New("too many Macs in this account")
+
+func macID(pub string) string {
+	b, err := proto.UnB64Len(pub, proto.PubKeySize)
+	if err != nil {
+		return ""
+	}
+	return proto.MacID(b)
+}
+
+// v1State is the single-Mac layout of state.json (HR1, version 1).
+type v1State struct {
+	Host *struct {
+		Pub       string    `json:"pub"`
+		Name      string    `json:"name"`
+		ClaimedAt time.Time `json:"claimedAt"`
+	} `json:"host"`
+	Devices map[string]*struct {
+		Status    string      `json:"status"`
+		Cert      *proto.Cert `json:"cert"`
+		RevokedAt time.Time   `json:"revokedAt"`
+	} `json:"devices"`
+}
+
+// migrate upgrades a single-Mac (version 1) state in place: the bound Mac
+// becomes hosts[0] and each device status becomes its approval for that Mac.
+// It is driven by content, not only the version number, so a file rewritten
+// by an older server is migrated again. Reports whether anything changed.
+func migrate(s *State, raw []byte) (bool, error) {
+	var old v1State
+	if err := json.Unmarshal(raw, &old); err != nil {
+		return false, err
+	}
+	changed := s.Version < stateVersion
+	s.Version = stateVersion
+	if old.Host != nil && old.Host.Pub != "" && len(s.Hosts) == 0 {
+		s.Hosts = []*HostBinding{{Pub: old.Host.Pub, Name: old.Host.Name, MacID: macID(old.Host.Pub), ClaimedAt: old.Host.ClaimedAt}}
+		changed = true
+	}
+	for _, h := range s.Hosts {
+		if h.MacID == "" {
+			h.MacID = macID(h.Pub)
+			changed = true
+		}
+	}
+	for pub, d := range s.Devices {
+		if d.Approvals != nil {
+			continue
+		}
+		changed = true
+		od := old.Devices[pub]
+		switch {
+		case old.Host == nil || od == nil:
+		case od.Status == StatusPending || od.Status == StatusApproved || od.Status == StatusRevoked:
+			a := &Approval{Status: od.Status, CreatedAt: d.CreatedAt, RevokedAt: od.RevokedAt}
+			if od.Status == StatusApproved {
+				a.Cert = od.Cert
+			}
+			d.SetApproval(old.Host.Pub, a)
+		}
+		if len(d.Approvals) == 0 {
+			delete(s.Devices, pub) // no Mac vouches for it any more
+		}
+	}
+	return changed, nil
 }
 
 // Store is the mutex-guarded persistent state.
@@ -213,32 +378,50 @@ type Store struct {
 }
 
 // Open loads (or initializes) the state in dir, creating dir with mode 0700.
+// A single-Mac (version 1) state file is migrated and rewritten at once.
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 	st := &Store{dir: dir, path: filepath.Join(dir, stateFile)}
-	s, err := ReadFile(st.path)
+	s, migrated, err := readFile(st.path)
 	if err != nil {
 		return nil, err
+	}
+	if migrated {
+		if err := writeAtomic(dir, st.path, s); err != nil {
+			return nil, fmt.Errorf("write migrated state: %w", err)
+		}
 	}
 	st.state = s
 	return st, nil
 }
 
-// ReadFile reads a state file without locking (used by the status command).
-// A missing file yields an empty state.
+// ReadFile reads a state file without locking (used by the status command),
+// migrating a version-1 layout in memory. A missing file yields an empty state.
 func ReadFile(path string) (*State, error) {
+	s, _, err := readFile(path)
+	return s, err
+}
+
+func readFile(path string) (*State, bool, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return newState(), nil
+		return newState(), false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read state: %w", err)
+		return nil, false, fmt.Errorf("read state: %w", err)
 	}
 	s := newState()
+	s.Version = 0
 	if err := json.Unmarshal(b, s); err != nil {
-		return nil, fmt.Errorf("parse state %s: %w", path, err)
+		return nil, false, fmt.Errorf("parse state %s: %w", path, err)
+	}
+	if s.Version > stateVersion {
+		return nil, false, fmt.Errorf("state %s has version %d; this server understands up to %d (was it written by a newer server?)", path, s.Version, stateVersion)
+	}
+	if s.Hosts == nil {
+		s.Hosts = []*HostBinding{}
 	}
 	if s.Devices == nil {
 		s.Devices = map[string]*Device{}
@@ -249,7 +432,11 @@ func ReadFile(path string) (*State, error) {
 	if s.Events == nil {
 		s.Events = []Event{}
 	}
-	return s, nil
+	migrated, err := migrate(s, b)
+	if err != nil {
+		return nil, false, fmt.Errorf("migrate state %s: %w", path, err)
+	}
+	return s, migrated, nil
 }
 
 // Path returns the state file path.

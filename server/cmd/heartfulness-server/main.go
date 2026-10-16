@@ -1,9 +1,9 @@
 // Command heartfulness-server is the Heartfulness Remote signaling server.
 //
 //	heartfulness-server [serve]        run the server (default)
-//	heartfulness-server status         show claim state, host fingerprint and counts (no secrets)
+//	heartfulness-server status         show claim state, the Macs (ID, fingerprint, key) and counts (no secrets)
 //	heartfulness-server reset --confirm
-//	                                   forget the owner, passkeys, host, devices and sessions
+//	                                   forget the owner, passkeys, Macs, devices and sessions
 //	heartfulness-server healthcheck    exit 0 if the local server answers /healthz
 package main
 
@@ -62,16 +62,17 @@ func usage(w io.Writer) {
 
 Commands:
   serve            Run the server (default).
-  status           Show whether the server is claimed, the Mac's key fingerprint
-                   and device counts. Prints no secrets.
-  reset --confirm  Forget the owner, passkeys, the Mac binding, all devices and
+  status           Show whether the server is claimed, its Macs (Mac ID, key
+                   fingerprint, host key) and device counts. Prints no secrets.
+  reset --confirm  Forget the owner, passkeys, all Macs, all devices and
                    sessions. Stop the server first. Use this to recover if the
                    wrong Mac claimed the server or all passkeys are lost.
   healthcheck      Exit 0 if the local server answers /healthz.
 
 Configuration (environment): HR_ORIGIN (required), HR_RP_ID, HR_LISTEN (:8080),
 HR_DATA_DIR (/data), HR_TURN_SECRET (required unless HR_DEV=1), HR_TURN_HOST,
-HR_TURN_PORT (3478), HR_TRUSTED_PROXIES, HR_HOST_PUBKEY, HR_WEB_DIR, HR_DEV.
+HR_TURN_PORT (3478), HR_TRUSTED_PROXIES, HR_HOST_PUBKEY (comma-separated
+allow-list of Mac host keys; empty = any), HR_WEB_DIR, HR_DEV.
 `)
 }
 
@@ -118,22 +119,32 @@ func status(w io.Writer) error {
 	now := time.Now()
 	yes := map[bool]string{true: "yes", false: "no"}
 	fmt.Fprintf(w, "Claimed:          %s\n", yes[st.Claimed()])
-	if st.Host != nil {
-		fp := "(invalid key)"
-		if pub, err := proto.UnB64Len(st.Host.Pub, proto.PubKeySize); err == nil {
-			fp = proto.Fingerprint(pub)
+	fmt.Fprintf(w, "Macs:             %d (at most %d)\n", len(st.Hosts), store.MaxHosts)
+	for i, h := range st.Hosts {
+		fp, macID := "(invalid key)", h.MacID
+		if pub, err := proto.UnB64Len(h.Pub, proto.PubKeySize); err == nil {
+			fp, macID = proto.Fingerprint(pub), proto.MacID(pub)
 		}
-		fmt.Fprintf(w, "Mac:              %s\n", st.Host.Name)
-		fmt.Fprintf(w, "Mac fingerprint:  %s\n", fp)
-		fmt.Fprintf(w, "Claimed at:       %s\n", st.Host.ClaimedAt.UTC().Format(time.RFC3339))
+		fmt.Fprintf(w, "Mac %d:            %s\n", i+1, h.Name)
+		fmt.Fprintf(w, "  Mac ID:         %s\n", proto.FormatMacID(macID))
+		fmt.Fprintf(w, "  Fingerprint:    %s\n", fp)
+		fmt.Fprintf(w, "  Host key:       %s   (for HR_HOST_PUBKEY)\n", h.Pub)
+		fmt.Fprintf(w, "  Added:          %s\n", h.ClaimedAt.UTC().Format(time.RFC3339))
 	}
 	passkeys := 0
 	if st.Owner != nil {
 		passkeys = len(st.Owner.Passkeys)
 	}
 	counts := map[string]int{}
-	for _, d := range st.Devices {
-		counts[d.Status]++
+	for pub, d := range st.Devices {
+		switch {
+		case st.ApprovedOnAny(pub):
+			counts[store.StatusApproved]++
+		case hasStatus(d, store.StatusPending):
+			counts[store.StatusPending]++
+		default:
+			counts[store.StatusRevoked]++
+		}
 	}
 	sessions := 0
 	for _, s := range st.Sessions {
@@ -142,11 +153,20 @@ func status(w io.Writer) error {
 		}
 	}
 	fmt.Fprintf(w, "Passkeys:         %d\n", passkeys)
-	fmt.Fprintf(w, "Devices:          %d approved, %d pending, %d revoked\n",
+	fmt.Fprintf(w, "Devices:          %d approved on a Mac, %d pending, %d revoked\n",
 		counts[store.StatusApproved], counts[store.StatusPending], counts[store.StatusRevoked])
 	fmt.Fprintf(w, "Active sessions:  %d\n", sessions)
 	fmt.Fprintf(w, "Audit events:     %d (kept 7 days)\n", len(st.Events))
 	return nil
+}
+
+func hasStatus(d *store.Device, status string) bool {
+	for _, a := range d.Approvals {
+		if a.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func reset(w io.Writer, args []string) error {
@@ -157,7 +177,7 @@ func reset(w io.Writer, args []string) error {
 		}
 	}
 	if !confirmed {
-		return errors.New("this forgets the owner, passkeys, the Mac and all devices; run again with --confirm")
+		return errors.New("this forgets the owner, passkeys, all Macs and all devices; run again with --confirm")
 	}
 	dir := dataDir()
 	release, err := store.Lock(dir)

@@ -5,12 +5,14 @@
 import {
   type Bytes,
   base32Lower,
+  base32Upper,
   bytes,
   equalBytes,
   EncodingError,
   b64,
   toBytes,
   unb64Len,
+  unbase32,
   utf8,
 } from "./b64";
 
@@ -30,7 +32,14 @@ export const LABEL = {
   setup: "HR1/setup",
   infoClaim: "HR1/claim",
   infoSetupAuth: "HR1/setup-auth",
+  macId: "HR1/mac-id",
+  joinConfirm: "HR1/join-confirm",
 } as const;
+
+/** Size of the join secret T for adding another Mac (80 bits, §10.2). */
+export const JOIN_SECRET_SIZE = 10;
+/** Size of the first-time setup secret T (§4). */
+export const SETUP_SECRET_SIZE = 32;
 
 export const NONCE_SIZE = 32;
 export const ID_SIZE = 16;
@@ -135,11 +144,21 @@ async function hkdf32(ikm: Uint8Array, info: string): Promise<Bytes> {
   return new Uint8Array(bits);
 }
 
-/** Kc = HKDF(T, ∅, "HR1/claim", 32); Ka = HKDF(T, ∅, "HR1/setup-auth", 32). */
-export async function setupKeys(t: Uint8Array): Promise<{ kc: Bytes; ka: Bytes }> {
-  if (t.length !== 32) throw new ProtocolError("setup secret must be 32 bytes");
+async function deriveKeys(t: Uint8Array): Promise<{ kc: Bytes; ka: Bytes }> {
   const [kc, ka] = await Promise.all([hkdf32(t, LABEL.infoClaim), hkdf32(t, LABEL.infoSetupAuth)]);
   return { kc, ka };
+}
+
+/** Kc = HKDF(T, ∅, "HR1/claim", 32); Ka = HKDF(T, ∅, "HR1/setup-auth", 32). T = 32-byte setup secret (§4). */
+export async function setupKeys(t: Uint8Array): Promise<{ kc: Bytes; ka: Bytes }> {
+  if (t.length !== SETUP_SECRET_SIZE) throw new ProtocolError("setup secret must be 32 bytes");
+  return deriveKeys(t);
+}
+
+/** Same derivation as setupKeys, for the 10-byte join secret of an additional Mac (§10.2). */
+export async function joinKeys(t: Uint8Array): Promise<{ kc: Bytes; ka: Bytes }> {
+  if (t.length !== JOIN_SECRET_SIZE) throw new ProtocolError("join secret must be 10 bytes");
+  return deriveKeys(t);
 }
 
 /** claim commit = H(Kc). */
@@ -147,11 +166,96 @@ export function claimCommit(kc: Uint8Array): Promise<Bytes> {
   return sha256(kc);
 }
 
+function hmacKey(k: Uint8Array, usage: "sign" | "verify"): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", toBytes(k), { name: "HMAC", hash: "SHA-256" }, false, [usage]);
+}
+
+async function hmac(k: Uint8Array, data: Bytes): Promise<Bytes> {
+  return new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(k, "sign"), data));
+}
+
 /** setup MAC = HMAC-SHA256(Ka, TBS("HR1/setup", hostPub, devicePub, name, kind)). */
-export async function setupMac(ka: Uint8Array, hostPub: Uint8Array, devicePub: Uint8Array, name: string, kind: string): Promise<Bytes> {
-  const key = await crypto.subtle.importKey("raw", toBytes(ka), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = await crypto.subtle.sign("HMAC", key, tbs(LABEL.setup, hostPub, devicePub, str(name), str(kind)));
-  return new Uint8Array(mac);
+export function setupMac(ka: Uint8Array, hostPub: Uint8Array, devicePub: Uint8Array, name: string, kind: string): Promise<Bytes> {
+  return hmac(ka, tbs(LABEL.setup, hostPub, devicePub, str(name), str(kind)));
+}
+
+// ---------------------------------------------------------------- multiple Macs (§10)
+
+/** Mac ID = u32be(H(TBS("HR1/mac-id", hostPub))[0:4]) mod 10^9, 9 digits. Display/lookup only — never trusted. */
+export async function macId(hostPub: Uint8Array): Promise<string> {
+  if (hostPub.length !== PUB_SIZE) throw new ProtocolError("host key must be 32 bytes");
+  const h = await sha256(tbs(LABEL.macId, hostPub));
+  return String(new DataView(h.buffer).getUint32(0, false) % 1_000_000_000).padStart(9, "0");
+}
+
+/** "482913557" → "482 913 557". */
+export function formatMacId(s: string): string {
+  return /^\d{9}$/.test(s) ? `${s.slice(0, 3)} ${s.slice(3, 6)} ${s.slice(6)}` : s;
+}
+
+/** What the owner typed ("482 913 557", "482-913-557") → "482913557", or null if it isn't 9 digits. */
+export function parseMacIdInput(s: string): string | null {
+  const d = s.replace(/[\s-]/g, "");
+  return /^\d{9}$/.test(d) ? d : null;
+}
+
+/** Formats partial input while typing: "4829135" → "482 913 5". */
+export function formatMacIdInput(s: string): string {
+  const d = s.replace(/\D/g, "").slice(0, 9);
+  return d.replace(/(\d{3})(?=\d)/g, "$1 ");
+}
+
+/** Join code shown on the Mac: base32(T) in groups of 4, e.g. "K7QP-3MZD-WX2R-9TFA". */
+export function joinCode(t: Uint8Array): string {
+  const s = base32Upper(t);
+  const parts: string[] = [];
+  for (let i = 0; i < s.length; i += 4) parts.push(s.slice(i, i + 4));
+  return parts.join("-");
+}
+
+/** Normalises typed input like Go proto.ParseJoinCode: uppercase, drop spaces/dashes/tabs, 0→O, 1→I, 8→B. */
+export function normalizeJoinCode(code: string): string {
+  let out = "";
+  for (const ch of code.toUpperCase()) {
+    if (ch === " " || ch === "-" || ch === "\t") continue;
+    out += ch === "0" ? "O" : ch === "1" ? "I" : ch === "8" ? "B" : ch;
+  }
+  return out;
+}
+
+/** Decodes a typed join code to the 10-byte join secret T. Throws ProtocolError if malformed. */
+export function parseJoinCode(code: string): Bytes {
+  let t: Bytes;
+  try {
+    t = unbase32(normalizeJoinCode(code));
+  } catch {
+    throw new ProtocolError("join code is not valid");
+  }
+  if (t.length !== JOIN_SECRET_SIZE) throw new ProtocolError("join code must encode 10 bytes");
+  return t;
+}
+
+/** Formats partial join-code input while typing: "k7qp3m" → "K7QP-3M". Characters that can't be in a code are dropped. */
+export function formatJoinCodeInput(s: string): string {
+  const c = normalizeJoinCode(s).replace(/[^A-Z2-7]/g, "").slice(0, 16);
+  const parts: string[] = [];
+  for (let i = 0; i < c.length; i += 4) parts.push(c.slice(i, i + 4));
+  return parts.join("-");
+}
+
+/** hostMac = HMAC-SHA256(Ka, TBS("HR1/join-confirm", hostPub, devicePub)) — proves the Mac that showed the code holds hostPub. */
+export function hostConfirmMac(ka: Uint8Array, hostPub: Uint8Array, devicePub: Uint8Array): Promise<Bytes> {
+  return hmac(ka, tbs(LABEL.joinConfirm, hostPub, devicePub));
+}
+
+/** Verifies a host confirmation MAC (constant time, via WebCrypto). Never throws. */
+export async function verifyHostConfirmMac(ka: Uint8Array, hostPub: Uint8Array, devicePub: Uint8Array, mac: Uint8Array): Promise<boolean> {
+  if (mac.length !== 32 || hostPub.length !== PUB_SIZE || devicePub.length !== PUB_SIZE) return false;
+  try {
+    return await crypto.subtle.verify("HMAC", await hmacKey(ka, "verify"), toBytes(mac), tbs(LABEL.joinConfirm, hostPub, devicePub));
+  } catch {
+    return false;
+  }
 }
 
 /** Display fingerprint: base32(H(pub)[0:10]) lowercase in groups of 4, e.g. "abcd-efgh-ijkl-mnop". */

@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"net/http"
-	"time"
 
 	"github.com/videoproduction-ctrl/heartfulness-remote/proto"
 	"github.com/videoproduction-ctrl/heartfulness-remote/server/internal/store"
@@ -110,53 +109,77 @@ func (h *hub) registerClient(c *conn, devicePub string) bool {
 	c.stage = 2
 	h.preAuth--
 	h.clients[c] = struct{}{}
-	device := msg{"status": store.StatusUnknown}
-	s.st.View(func(st *store.State) {
-		if d, ok := st.Devices[devicePub]; ok {
-			device["status"] = d.Status
-			if d.Status == store.StatusApproved && d.Cert != nil {
-				device["cert"] = *d.Cert
-			}
-		}
-	})
-	c.sendMsg(msg{"type": "ready", "device": device, "host": h.hostInfoLocked()})
-	if device["status"] == store.StatusApproved {
-		for _, p := range h.pairings {
-			if p.revealed && !p.bad {
-				c.sendMsg(h.approvalNeeded(p))
-			}
+	c.sendMsg(msg{"type": "ready", "device": msg{"pub": devicePub}, "hosts": h.readyHostsLocked(devicePub)})
+	// Pairing requests waiting for an approver, on the Macs this device may approve for.
+	for _, p := range h.pairings {
+		if p.revealed && !p.bad && p.devicePub != devicePub && s.approvalStatus(devicePub, p.hostPub) == store.StatusApproved {
+			c.sendMsg(h.approvalNeeded(p))
 		}
 	}
 	s.touchDevice(devicePub, false)
 	return true
 }
 
-// requireApproved checks (from the store, which mirrors the Mac's
-// signatures) that the connection's device is approved.
-func (h *hub) requireApprovedLocked(c *conn, m *inMsg) bool {
-	if h.s.deviceStatus(c.devicePub) != store.StatusApproved {
-		c.sendErr("not-approved", "for", m.Type)
+// ---- target Mac checks (§10.3) ----
+
+// targetLocked validates the hostPub a client message names: it must be a
+// Mac bound to the owner.
+func (h *hub) targetLocked(c *conn, m *inMsg) bool {
+	if _, ok := b64Key(m.HostPub); !ok {
+		c.sendErr("bad-request", "for", m.Type)
+		return false
+	}
+	bound := false
+	h.s.st.View(func(st *store.State) { bound = st.Host(m.HostPub) != nil })
+	if !bound {
+		c.sendErr("unknown-host", "for", m.Type, "hostPub", m.HostPub)
 		return false
 	}
 	return true
 }
 
-func (h *hub) requireHostLocked(c *conn, m *inMsg) bool {
-	if h.host == nil {
-		c.sendErr("host-offline", "for", m.Type)
+// requireApprovedOnLocked checks (from the store, which mirrors each Mac's
+// signatures) that the connection's device is approved ON hostPub.
+func (h *hub) requireApprovedOnLocked(c *conn, m *inMsg, hostPub string) bool {
+	if h.s.approvalStatus(c.devicePub, hostPub) != store.StatusApproved {
+		c.sendErr("not-approved", "for", m.Type, "hostPub", hostPub)
 		return false
 	}
 	return true
 }
 
-// ---- pairing (§5) ----
+// onlineLocked returns the connection of a bound Mac, or reports it offline.
+func (h *hub) onlineLocked(c *conn, m *inMsg, hostPub string) *conn {
+	hc := h.hosts[hostPub]
+	if hc == nil {
+		c.sendErr("host-offline", "for", m.Type, "hostPub", hostPub)
+	}
+	return hc
+}
+
+// sameHostLocked rejects a message whose (optional) hostPub differs from the
+// Mac its requestId/sessionId belongs to.
+func sameHost(c *conn, m *inMsg, hostPub string) bool {
+	if m.HostPub != "" && m.HostPub != hostPub {
+		c.sendErr("host-mismatch", "for", m.Type, "hostPub", hostPub)
+		return false
+	}
+	return true
+}
+
+// ---- pairing (§5, per Mac) ----
 
 func (h *hub) pairStartLocked(c *conn, m *inMsg) {
-	if h.s.deviceStatus(c.devicePub) == store.StatusApproved {
-		c.sendErr("already-approved", "for", m.Type)
+	if !h.targetLocked(c, m) {
 		return
 	}
-	if !h.requireHostLocked(c, m) {
+	hp := m.HostPub
+	if h.s.approvalStatus(c.devicePub, hp) == store.StatusApproved {
+		c.sendErr("already-approved", "for", m.Type, "hostPub", hp)
+		return
+	}
+	hc := h.onlineLocked(c, m, hp)
+	if hc == nil {
 		return
 	}
 	name, okName := cleanName(m.Name)
@@ -165,29 +188,34 @@ func (h *hub) pairStartLocked(c *conn, m *inMsg) {
 		c.sendErr("bad-request", "for", m.Type)
 		return
 	}
+	onHost := 0
 	for _, p := range h.pairings {
+		if p.hostPub != hp {
+			continue
+		}
 		if p.devicePub == c.devicePub {
-			c.sendErr("pairing-in-progress", "for", m.Type, "requestId", p.id)
+			c.sendErr("pairing-in-progress", "for", m.Type, "requestId", p.id, "hostPub", hp)
 			return
 		}
+		onHost++
 	}
-	if len(h.pairings) >= maxPairings {
-		c.sendErr("too-many-pending", "for", m.Type)
+	if onHost >= maxPairingsPerHost || len(h.pairings) >= maxPairings {
+		c.sendErr("too-many-pending", "for", m.Type, "hostPub", hp)
 		return
 	}
 	raw := randBytes(proto.IDSize)
 	p := &pairing{
-		id: proto.B64(raw), idRaw: raw, conn: c, devicePub: c.devicePub,
+		id: proto.B64(raw), idRaw: raw, conn: c, devicePub: c.devicePub, hostPub: hp,
 		name: name, kind: m.Kind, commit: commit, created: h.s.now(),
 	}
 	h.pairings[p.id] = p
-	h.host.sendMsg(msg{"type": "pair-request", "requestId": p.id, "devicePub": "", "name": name, "kind": m.Kind, "commit": m.Commit})
-	c.sendMsg(msg{"type": "pair-pending", "requestId": p.id})
+	hc.sendMsg(msg{"type": "pair-request", "requestId": p.id, "devicePub": "", "name": name, "kind": m.Kind, "commit": m.Commit})
+	c.sendMsg(msg{"type": "pair-pending", "requestId": p.id, "hostPub": hp})
 }
 
 func (h *hub) pairChallengeLocked(c *conn, m *inMsg) {
 	p := h.pairings[m.RequestID]
-	if p == nil || p.challenged {
+	if p == nil || p.hostPub != c.hostPub || p.challenged {
 		c.sendErr("unknown-request", "requestId", m.RequestID)
 		return
 	}
@@ -215,6 +243,9 @@ func (h *hub) pairRevealLocked(c *conn, m *inMsg) {
 		c.sendErr("unknown-request", "requestId", m.RequestID)
 		return
 	}
+	if !sameHost(c, m, p.hostPub) {
+		return
+	}
 	if !p.challenged || p.revealed {
 		c.sendErr("bad-state", "requestId", p.id)
 		return
@@ -224,14 +255,15 @@ func (h *hub) pairRevealLocked(c *conn, m *inMsg) {
 		c.sendErr("bad-request", "requestId", p.id)
 		return
 	}
-	if !h.requireHostLocked(c, m) {
+	hc := h.onlineLocked(c, m, p.hostPub)
+	if hc == nil {
 		return
 	}
 	p.conn = c
 	devPub := h.devicePubBytes(c)
 	p.nd, p.revealed = nd, true
 	// devicePub comes from the authenticated connection, never from the message.
-	h.host.sendMsg(msg{"type": "pair-reveal", "requestId": p.id, "devicePub": c.devicePub, "nd": m.Nd})
+	hc.sendMsg(msg{"type": "pair-reveal", "requestId": p.id, "devicePub": c.devicePub, "nd": m.Nd})
 	if !bytes.Equal(proto.PairCommit(devPub, nd), p.commit) {
 		// The host will reject it too; never ask the owner to approve it.
 		p.bad = true
@@ -239,21 +271,25 @@ func (h *hub) pairRevealLocked(c *conn, m *inMsg) {
 	}
 	now := h.s.now()
 	_ = h.s.st.Update(func(st *store.State) error {
-		d, ok := st.Devices[p.devicePub]
-		if ok && d.Status == store.StatusApproved {
+		d := st.Devices[p.devicePub]
+		if a := d.Approval(p.hostPub); a != nil && a.Status == store.StatusApproved {
 			return store.ErrNoChange
 		}
-		st.Devices[p.devicePub] = &store.Device{Pub: p.devicePub, Name: p.name, Kind: p.kind, Status: store.StatusPending, CreatedAt: now}
+		if d == nil {
+			d = &store.Device{Pub: p.devicePub, Name: p.name, Kind: p.kind, CreatedAt: now}
+			st.Devices[p.devicePub] = d
+		}
+		d.SetApproval(p.hostPub, &store.Approval{Status: store.StatusPending, CreatedAt: now})
 		st.AddEvent(store.Event{Time: now, Type: "device-pending", Device: p.name, IP: c.ip.String()})
 		return nil
 	})
-	h.toApproversLocked(h.approvalNeeded(p), p.devicePub)
+	h.toApproversLocked(p.hostPub, h.approvalNeeded(p), p.devicePub)
 	h.broadcastDevicesChangedLocked()
 }
 
 func (h *hub) approvalNeeded(p *pairing) msg {
 	return msg{
-		"type": "approval-needed", "requestId": p.id, "name": p.name, "kind": p.kind,
+		"type": "approval-needed", "requestId": p.id, "hostPub": p.hostPub, "name": p.name, "kind": p.kind,
 		"devicePub": p.devicePub, "nd": proto.B64(p.nd), "commit": proto.B64(p.commit),
 		"na": proto.B64(p.na), "hostSig": proto.B64(p.hostSg),
 	}
@@ -265,12 +301,19 @@ func (h *hub) devicePubBytes(c *conn) []byte {
 }
 
 func (h *hub) pairApproveLocked(c *conn, m *inMsg) {
-	if !h.requireApprovedLocked(c, m) || !h.requireHostLocked(c, m) {
+	if !h.targetLocked(c, m) || !h.requireApprovedOnLocked(c, m, m.HostPub) {
+		return
+	}
+	hc := h.onlineLocked(c, m, m.HostPub)
+	if hc == nil {
 		return
 	}
 	p := h.pairings[m.RequestID]
 	if p == nil || !p.revealed || p.bad {
 		c.sendErr("unknown-request", "requestId", m.RequestID)
+		return
+	}
+	if !sameHost(c, m, p.hostPub) {
 		return
 	}
 	sig, err := proto.UnB64Len(m.Sig, proto.SignatureSize)
@@ -279,17 +322,21 @@ func (h *hub) pairApproveLocked(c *conn, m *inMsg) {
 		return
 	}
 	devPub, _ := proto.UnB64Len(p.devicePub, proto.PubKeySize)
-	hostPub := h.hostPubBytes(h.host)
+	hostPub := h.hostPubBytes(hc)
 	if !proto.Verify(h.devicePubBytes(c), sig, proto.LabelPairApprove, p.idRaw, hostPub, devPub, p.nd, p.na, proto.Str(p.name), proto.Str(p.kind)) {
 		h.s.authFailureIP(c.ip, "pair-approve signature")
 		c.sendErr("bad-signature", "requestId", p.id)
 		return
 	}
-	h.host.sendMsg(msg{"type": "pair-approve", "requestId": p.id, "approverPub": c.devicePub, "sig": m.Sig})
+	hc.sendMsg(msg{"type": "pair-approve", "requestId": p.id, "approverPub": c.devicePub, "sig": m.Sig})
 }
 
 func (h *hub) pairDenyLocked(c *conn, m *inMsg) {
-	if !h.requireApprovedLocked(c, m) || !h.requireHostLocked(c, m) {
+	if !h.targetLocked(c, m) || !h.requireApprovedOnLocked(c, m, m.HostPub) {
+		return
+	}
+	hc := h.onlineLocked(c, m, m.HostPub)
+	if hc == nil {
 		return
 	}
 	p := h.pairings[m.RequestID]
@@ -297,63 +344,80 @@ func (h *hub) pairDenyLocked(c *conn, m *inMsg) {
 		c.sendErr("unknown-request", "requestId", m.RequestID)
 		return
 	}
-	h.host.sendMsg(msg{"type": "pair-deny", "requestId": p.id, "approverPub": c.devicePub})
+	if !sameHost(c, m, p.hostPub) {
+		return
+	}
+	hc.sendMsg(msg{"type": "pair-deny", "requestId": p.id, "approverPub": c.devicePub})
 }
 
 func (h *hub) pairResultLocked(c *conn, m *inMsg) {
 	s := h.s
 	p := h.pairings[m.RequestID]
-	if p == nil || m.Approved == nil {
+	if p == nil || p.hostPub != c.hostPub || m.Approved == nil {
 		c.sendErr("unknown-request", "requestId", m.RequestID)
 		return
 	}
+	hp := p.hostPub
 	now := s.now()
 	finish := func(toDevice msg) {
 		if p.conn != nil {
 			p.conn.sendMsg(toDevice)
 		}
 		if p.revealed && !p.bad {
-			h.toApproversLocked(msg{"type": "approval-closed", "requestId": p.id}, p.devicePub)
+			h.toApproversLocked(hp, msg{"type": "approval-closed", "requestId": p.id, "hostPub": hp}, p.devicePub)
 		}
 		delete(h.pairings, p.id)
 		h.broadcastDevicesChangedLocked()
 	}
 	if !*m.Approved {
 		_ = s.st.Update(func(st *store.State) error {
-			if d, ok := st.Devices[p.devicePub]; ok && d.Status == store.StatusPending {
-				delete(st.Devices, p.devicePub)
+			if d := st.Devices[p.devicePub]; d != nil {
+				if a := d.Approval(hp); a != nil && a.Status == store.StatusPending {
+					delete(d.Approvals, hp)
+					if len(d.Approvals) == 0 {
+						delete(st.Devices, p.devicePub)
+					}
+				}
 			}
 			st.AddEvent(store.Event{Time: now, Type: "device-denied", Device: p.name})
 			return nil
 		})
-		finish(msg{"type": "pair-denied", "requestId": p.id, "reason": cleanReason(m.Reason, "denied")})
+		finish(msg{"type": "pair-denied", "requestId": p.id, "hostPub": hp, "reason": cleanReason(m.Reason, "denied")})
 		return
 	}
 	if !p.revealed || p.bad || m.Cert == nil || m.Cert.Verify(h.hostPubBytes(c)) != nil || m.Cert.DevicePub != p.devicePub {
 		s.log.Warn("pair-result rejected: certificate is not valid for this request")
 		c.sendErr("bad-cert", "requestId", p.id)
-		finish(msg{"type": "pair-denied", "requestId": p.id, "reason": "error"})
+		finish(msg{"type": "pair-denied", "requestId": p.id, "hostPub": hp, "reason": "error"})
 		return
 	}
 	ct := *m.Cert
 	_ = s.st.Update(func(st *store.State) error {
-		name, kind := certNameKind(ct, p.name, p.kind)
 		d, ok := st.Devices[p.devicePub]
 		if !ok {
-			d = &store.Device{Pub: p.devicePub, CreatedAt: now}
+			d = &store.Device{Pub: p.devicePub, Name: p.name, Kind: p.kind, CreatedAt: now}
 			st.Devices[p.devicePub] = d
 		}
-		d.Name, d.Kind, d.Status, d.Cert, d.RevokedAt = name, kind, store.StatusApproved, &ct, time.Time{}
-		st.AddEvent(store.Event{Time: now, Type: "device-approved", Device: name})
+		created := now
+		if a := d.Approval(hp); a != nil {
+			created = a.CreatedAt
+		}
+		d.Name, d.Kind = certNameKind(ct, p.name, p.kind)
+		d.SetApproval(hp, &store.Approval{Status: store.StatusApproved, Cert: &ct, CreatedAt: created})
+		st.AddEvent(store.Event{Time: now, Type: "device-approved", Device: d.Name})
 		return nil
 	})
-	finish(msg{"type": "pair-approved", "requestId": p.id, "cert": ct})
+	finish(msg{"type": "pair-approved", "requestId": p.id, "hostPub": hp, "cert": ct})
 }
 
-// ---- device management ----
+// ---- device management (per Mac) ----
 
 func (h *hub) revokeRequestLocked(c *conn, m *inMsg) {
-	if !h.requireApprovedLocked(c, m) || !h.requireHostLocked(c, m) {
+	if !h.targetLocked(c, m) || !h.requireApprovedOnLocked(c, m, m.HostPub) {
+		return
+	}
+	hc := h.onlineLocked(c, m, m.HostPub)
+	if hc == nil {
 		return
 	}
 	target, ok := b64Key(m.TargetPub)
@@ -366,16 +430,20 @@ func (h *hub) revokeRequestLocked(c *conn, m *inMsg) {
 		c.sendErr("stale", "for", m.Type)
 		return
 	}
-	if !proto.Verify(h.devicePubBytes(c), sig, proto.LabelRevokeRequest, h.hostPubBytes(h.host), target, proto.Int(m.Ts)) {
+	if !proto.Verify(h.devicePubBytes(c), sig, proto.LabelRevokeRequest, h.hostPubBytes(hc), target, proto.Int(m.Ts)) {
 		h.s.authFailureIP(c.ip, "revoke-request signature")
 		c.sendErr("bad-signature", "for", m.Type)
 		return
 	}
-	h.host.sendMsg(msg{"type": "revoke-request", "targetPub": m.TargetPub, "ts": m.Ts, "approverPub": c.devicePub, "sig": m.Sig})
+	hc.sendMsg(msg{"type": "revoke-request", "targetPub": m.TargetPub, "ts": m.Ts, "approverPub": c.devicePub, "sig": m.Sig})
 }
 
 func (h *hub) killRequestLocked(c *conn, m *inMsg) {
-	if !h.requireApprovedLocked(c, m) || !h.requireHostLocked(c, m) {
+	if !h.targetLocked(c, m) || !h.requireApprovedOnLocked(c, m, m.HostPub) {
+		return
+	}
+	hc := h.onlineLocked(c, m, m.HostPub)
+	if hc == nil {
 		return
 	}
 	if m.Action != "kill" && m.Action != "resume" {
@@ -391,18 +459,22 @@ func (h *hub) killRequestLocked(c *conn, m *inMsg) {
 		c.sendErr("stale", "for", m.Type)
 		return
 	}
-	if !proto.Verify(h.devicePubBytes(c), sig, proto.LabelKillRequest, h.hostPubBytes(h.host), proto.Str(m.Action), proto.Int(m.Ts)) {
+	if !proto.Verify(h.devicePubBytes(c), sig, proto.LabelKillRequest, h.hostPubBytes(hc), proto.Str(m.Action), proto.Int(m.Ts)) {
 		h.s.authFailureIP(c.ip, "kill-request signature")
 		c.sendErr("bad-signature", "for", m.Type)
 		return
 	}
-	h.host.sendMsg(msg{"type": "kill-request", "action": m.Action, "ts": m.Ts, "approverPub": c.devicePub, "sig": m.Sig})
+	hc.sendMsg(msg{"type": "kill-request", "action": m.Action, "ts": m.Ts, "approverPub": c.devicePub, "sig": m.Sig})
 }
 
 // ---- sessions ----
 
 func (h *hub) sessionRequestLocked(c *conn, m *inMsg) {
-	if !h.requireApprovedLocked(c, m) || !h.requireHostLocked(c, m) {
+	if !h.targetLocked(c, m) || !h.requireApprovedOnLocked(c, m, m.HostPub) {
+		return
+	}
+	hc := h.onlineLocked(c, m, m.HostPub)
+	if hc == nil {
 		return
 	}
 	if _, err := proto.UnB64Len(m.SessionID, proto.IDSize); err != nil {
@@ -427,12 +499,12 @@ func (h *hub) sessionRequestLocked(c *conn, m *inMsg) {
 		c.sendErr("too-many-sessions", "sessionId", m.SessionID)
 		return
 	}
-	h.sessions[m.SessionID] = &rtcSession{id: m.SessionID, client: c, devicePub: c.devicePub, created: h.s.now()}
+	h.sessions[m.SessionID] = &rtcSession{id: m.SessionID, client: c, devicePub: c.devicePub, hostPub: m.HostPub, created: h.s.now()}
 	out := msg{"type": "session-request", "sessionId": m.SessionID, "devicePub": c.devicePub, "clientNonce": m.ClientNonce}
 	if m.RelayOnly {
 		out["relayOnly"] = true
 	}
-	h.host.sendMsg(out)
+	hc.sendMsg(out)
 }
 
 func (h *hub) clientSessionLocked(c *conn, m *inMsg) {
@@ -441,14 +513,18 @@ func (h *hub) clientSessionLocked(c *conn, m *inMsg) {
 		c.sendErr("unknown-session", "sessionId", m.SessionID)
 		return
 	}
-	if h.host == nil {
-		c.sendErr("host-offline", "sessionId", rs.id)
+	if !sameHost(c, m, rs.hostPub) {
+		return
+	}
+	hc := h.hosts[rs.hostPub]
+	if hc == nil {
+		c.sendErr("host-offline", "sessionId", rs.id, "hostPub", rs.hostPub)
 		return
 	}
 	out := msg{"type": m.Type, "sessionId": rs.id}
 	switch m.Type {
 	case "offer":
-		if !h.requireApprovedLocked(c, m) {
+		if !h.requireApprovedOnLocked(c, m, rs.hostPub) {
 			return
 		}
 		if !rs.accepted || len(m.Sdp) == 0 || len(m.Sdp) > maxSDP {
@@ -471,5 +547,5 @@ func (h *hub) clientSessionLocked(c *conn, m *inMsg) {
 		out["reason"] = cleanReason(m.Reason, "ended")
 		delete(h.sessions, rs.id)
 	}
-	h.host.sendMsg(out)
+	hc.sendMsg(out)
 }

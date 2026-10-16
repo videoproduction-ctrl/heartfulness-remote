@@ -1,13 +1,12 @@
-// Entry point. The one-time setup secret is read and removed from the address
-// bar before anything else runs.
+// Entry point. A one-time setup / join secret is read and removed from the
+// address bar before anything else runs.
 
 import "./styles.css";
 import { App } from "./app";
-import { takeSetupFragment } from "./fragment";
+import { takeFragment } from "./fragment";
 import { detectPlatform } from "./platform";
-import { toast } from "./ui";
 
-const setup = takeSetupFragment();
+const fragment = takeFragment();
 
 function boot(): void {
   let root = document.getElementById("app");
@@ -16,8 +15,7 @@ function boot(): void {
     root.id = "app";
     document.body.appendChild(root);
   }
-  const app = new App(detectPlatform(), root, setup === "invalid" ? null : setup);
-  if (setup === "invalid") toast("This setup link is damaged. On your Mac, show the QR code again and rescan it.", "error", 9000);
+  const app = new App(detectPlatform(), root, fragment);
   void app.start();
 }
 

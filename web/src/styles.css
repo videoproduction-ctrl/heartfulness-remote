@@ -744,6 +744,187 @@ a {
   font-family: var(--mono);
 }
 
+/* ------------------------------------------------------------- your Macs */
+
+.section-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.section-intro {
+  margin-top: -6px;
+}
+
+.macs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mac-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mac-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.mac-ident {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.mac-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mac-id {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+h2.status-title {
+  font-size: clamp(26px, 7vw, 32px);
+}
+
+.mac-note {
+  font-size: 15px;
+  color: var(--text-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.mac-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mac-actions .btn-plain {
+  align-self: center;
+}
+
+.btn-danger-text {
+  color: var(--red);
+}
+
+.add-mac-btn {
+  align-self: center;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--fill);
+  overflow-wrap: anywhere;
+}
+
+.chip-pending {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange-dot) 14%, transparent);
+}
+
+.mac-id-small {
+  font-size: 13px;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+}
+
+.details dt {
+  color: var(--text-2);
+}
+
+.details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.mac-ident-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.join-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--bg-sunken);
+  text-align: center;
+}
+
+.join-confirm-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.join-confirm-icon .icon {
+  width: 30px;
+  height: 30px;
+}
+
+.join-confirm-name {
+  font: 700 22px/1.2 var(--font-display);
+  overflow-wrap: anywhere;
+}
+
+.input-macid,
+.input-joincode {
+  text-align: center;
+  font: 600 24px var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.input-joincode {
+  font-size: clamp(17px, 5vw, 22px);
+  text-transform: uppercase;
+}
+
 /* ------------------------------------------------------------- toasts */
 
 .toasts {
@@ -1097,6 +1278,22 @@ kbd {
   color: #ff6961;
 }
 
+.tool-mac {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 10px 0 12px;
+  color: rgba(255, 255, 255, 0.86);
+  font: 600 14px/1.2 var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlay-mac {
+  font-weight: 600;
+}
+
 .tool-sep {
   width: 1px;
   align-self: stretch;
@@ -1380,4 +1577,11 @@ kbd {
 .file-entry.is-folder:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent-fill) 60%, transparent);
   outline-offset: 0;
+}
+
+@media (max-width: 480px) {
+  .tool-mac {
+    max-width: 110px;
+    padding: 0 6px 0 10px;
+  }
 }

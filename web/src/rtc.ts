@@ -5,6 +5,7 @@
 import type { Api } from "./api";
 import { type Bytes, b64, randomBytes } from "./b64";
 import { b64Field, ID_SIZE, NONCE_SIZE, ProtocolError, type SessionBinding, SIG_SIZE, signOffer, type Signer, verifyAnswer } from "./hr1";
+import { aboutMac, iceMsg, offerMsg, sessionEndMsg, sessionRequestMsg } from "./messages";
 import { type Msg, type Signal, waitFor } from "./signal";
 
 export type EndKind = "user" | "host" | "network" | "security" | "rejected" | "error";
@@ -23,6 +24,7 @@ export interface SessionDeps {
   signal: Signal;
   api: Api;
   signer: Signer;
+  /** The PINNED key of the Mac to connect to (also its routing id, §10.3). */
   pinnedHost: Bytes;
   relayOnly?: boolean;
 }
@@ -126,6 +128,7 @@ function sanitizeCandidate(v: unknown): RTCIceCandidateInit | null | undefined {
 export class RemoteSession {
   readonly sessionId: Bytes = randomBytes(ID_SIZE);
   readonly sid = b64(this.sessionId);
+  readonly hostPub: string;
   private readonly clientNonce: Bytes = randomBytes(NONCE_SIZE);
   pc: RTCPeerConnection | null = null;
   control: RTCDataChannel | null = null;
@@ -148,9 +151,12 @@ export class RemoteSession {
   constructor(
     private readonly deps: SessionDeps,
     private readonly ev: SessionEvents,
-  ) {}
+  ) {
+    this.hostPub = b64(deps.pinnedHost);
+  }
 
-  private own = (m: Msg): boolean => m["sessionId"] === this.sid;
+  /** Messages for this session: our sessionId, from our Mac. */
+  private own = (m: Msg): boolean => m["sessionId"] === this.sid && aboutMac(m, this.hostPub);
 
   private timer(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
     const t = setTimeout(() => {
@@ -198,8 +204,7 @@ export class RemoteSession {
 
     this.ev.stage("requesting");
     const turnP = this.deps.api.turn().catch(() => null);
-    const req: Msg = { type: "session-request", sessionId: this.sid, devicePub: b64(signer.pub), clientNonce: b64(this.clientNonce) };
-    if (this.deps.relayOnly) req["relayOnly"] = true;
+    const req = sessionRequestMsg(this.hostPub, this.sid, signer.pub, this.clientNonce, !!this.deps.relayOnly);
     if (!sig.send(req)) throw new Error("Not connected to the server.");
 
     const acc = await waitFor(sig, ["session-accept", "session-reject"], this.own, ACCEPT_TIMEOUT_MS, this.abort.signal);
@@ -276,7 +281,7 @@ export class RemoteSession {
     // Sign exactly the SDP string we send.
     const offerSig = await signOffer(signer, binding, offerSdp);
     if (this.ended) return;
-    if (!sig.send({ type: "offer", sessionId: this.sid, sdp: offerSdp, sig: b64(offerSig) })) throw new Error("Not connected to the server.");
+    if (!sig.send(offerMsg(this.hostPub, this.sid, offerSdp, offerSig))) throw new Error("Not connected to the server.");
     this.offerSent = true;
     for (const c of this.localIce.splice(0)) this.sendIce(c);
 
@@ -301,7 +306,7 @@ export class RemoteSession {
   }
 
   private sendIce(c: RTCIceCandidateInit | null): void {
-    this.deps.signal.send({ type: "ice", sessionId: this.sid, candidate: c });
+    this.deps.signal.send(iceMsg(this.hostPub, this.sid, c));
   }
 
   private async onRemoteIce(raw: unknown): Promise<void> {
@@ -393,7 +398,7 @@ export class RemoteSession {
     this.ended = true;
     this.abort.abort();
     if (notify && this.deps.signal.isReady) {
-      this.deps.signal.send({ type: "session-end", sessionId: this.sid, reason: kind === "user" ? "user" : kind });
+      this.deps.signal.send(sessionEndMsg(this.hostPub, this.sid, kind === "user" ? "user" : kind));
     }
     for (const off of this.offs.splice(0)) off();
     for (const t of this.timers) clearTimeout(t);

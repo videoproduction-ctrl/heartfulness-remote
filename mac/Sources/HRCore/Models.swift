@@ -168,24 +168,42 @@ public struct TrustedDevice: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// STATE payload:
-/// `{server, serverError?, claimed, setupURL?, killed, session, pending, devices}`.
+/// `{server, serverError?, claimed, joined, macId, setupURL?, joinURL?, joinCode?, killed, session, pending, devices}`.
+///
+/// * `claimed` — the server has an owner (a passkey was created).
+/// * `joined` — this Mac is in the owner's account (PROTOCOL.md §10).
+/// * `setupURL` — only while the server is online and unclaimed (first phone, §4).
+/// * `joinURL` / `joinCode` — only while the server is online, claimed, and this Mac is not
+///   in the account yet (§10.2). `joinCode` is pre-formatted, e.g. "K7QP-3MZD-WX2R-9TFA".
+/// * `macId` — nine digits without spaces (use `MacIDFormatter.format`).
 public struct AgentState: Codable, Equatable, Sendable {
     public var server: ServerConnection
     public var serverError: String?
     public var claimed: Bool
+    public var joined: Bool
+    public var macId: String
     public var setupURL: String?
+    public var joinURL: String?
+    public var joinCode: String?
     public var killed: Bool
     public var session: SessionInfo?
     public var pending: [PendingApproval]
     public var devices: [TrustedDevice]
 
+    /// `joined: nil` means "same as `claimed`" (the meaning before multi-Mac support).
     public init(server: ServerConnection = .offline, serverError: String? = nil, claimed: Bool = false,
-                setupURL: String? = nil, killed: Bool = false, session: SessionInfo? = nil,
+                joined: Bool? = nil, macId: String = "",
+                setupURL: String? = nil, joinURL: String? = nil, joinCode: String? = nil,
+                killed: Bool = false, session: SessionInfo? = nil,
                 pending: [PendingApproval] = [], devices: [TrustedDevice] = []) {
         self.server = server
         self.serverError = serverError
         self.claimed = claimed
+        self.joined = joined ?? claimed
+        self.macId = macId
         self.setupURL = setupURL
+        self.joinURL = joinURL
+        self.joinCode = joinCode
         self.killed = killed
         self.session = session
         self.pending = pending
@@ -193,7 +211,7 @@ public struct AgentState: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case server, serverError, claimed, setupURL, killed, session, pending, devices
+        case server, serverError, claimed, joined, macId, setupURL, joinURL, joinCode, killed, session, pending, devices
     }
 
     public init(from decoder: Decoder) throws {
@@ -201,12 +219,34 @@ public struct AgentState: Codable, Equatable, Sendable {
         server = (try? c.decodeIfPresent(ServerConnection.self, forKey: .server)) ?? .offline
         serverError = c.lenientString(.serverError).flatMap { $0.isEmpty ? nil : $0 }
         claimed = c.lenientBool(.claimed) ?? false
+        // An agent from before multi-Mac support sends no "joined": one Mac per server, so a
+        // claimed server meant this Mac was the owner's.
+        joined = c.lenientBool(.joined) ?? claimed
+        macId = c.lenientString(.macId) ?? ""
         setupURL = c.lenientString(.setupURL).flatMap { $0.isEmpty ? nil : $0 }
+        joinURL = c.lenientString(.joinURL).flatMap { $0.isEmpty ? nil : $0 }
+        joinCode = c.lenientString(.joinCode).flatMap { $0.isEmpty ? nil : $0 }
         killed = c.lenientBool(.killed) ?? false
         session = try? c.decodeIfPresent(SessionInfo.self, forKey: .session)
         pending = (try? c.decodeIfPresent([PendingApproval].self, forKey: .pending)) ?? []
         devices = (try? c.decodeIfPresent([TrustedDevice].self, forKey: .devices)) ?? []
     }
+
+    /// Where this Mac stands with the owner's account.
+    public var account: AccountStatus {
+        if !claimed { return .serverNotSetUp }
+        return joined ? .inAccount : .notInAccount
+    }
+}
+
+/// Whether this Mac belongs to the owner's account (derived from STATE.claimed / joined).
+public enum AccountStatus: String, Equatable, Sendable {
+    /// The server has no owner yet: pair the first phone (creates the passkey).
+    case serverNotSetUp
+    /// The server has an owner, but this Mac isn't in the account yet: add it with the join code.
+    case notInAccount
+    /// This Mac is in the owner's account.
+    case inAccount
 }
 
 // MARK: - EVENT (0x87)

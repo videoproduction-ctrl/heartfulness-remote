@@ -187,7 +187,8 @@ func limitKey(a netip.Addr) string {
 // ---- admission: rate limits, lockout, global throttle ----
 
 func isAuthPath(p string) bool {
-	return strings.HasPrefix(p, "/api/setup/") || strings.HasPrefix(p, "/api/login/") || strings.HasPrefix(p, "/api/link/")
+	return strings.HasPrefix(p, "/api/setup/") || strings.HasPrefix(p, "/api/login/") ||
+		strings.HasPrefix(p, "/api/link/") || strings.HasPrefix(p, "/api/hosts/")
 }
 
 func (s *Server) admit(w http.ResponseWriter, r *http.Request, ip netip.Addr, path string, isAPI, isWS bool) bool {

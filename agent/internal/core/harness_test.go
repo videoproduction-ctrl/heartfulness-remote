@@ -225,7 +225,12 @@ type envOpt func(*Config, *Options)
 
 func newEnv(t *testing.T, claimed bool, opts ...envOpt) *testEnv {
 	t.Helper()
-	host := newFakeHost()
+	return newEnvHost(t, newFakeHost(), claimed, opts...)
+}
+
+// newEnvHost is newEnv with a given host key (e.g. the test-vector key).
+func newEnvHost(t *testing.T, host *fakeHost, claimed bool, opts ...envOpt) *testEnv {
+	t.Helper()
 	base := t.TempDir()
 	e := &testEnv{host: host, srv: newFakeSender(), dir: filepath.Join(base, "data"),
 		home: filepath.Join(base, "home"), dlDir: filepath.Join(base, "dl"),
@@ -257,9 +262,31 @@ func newEnv(t *testing.T, claimed bool, opts ...envOpt) *testEnv {
 }
 
 func (e *testEnv) ready(claimed bool) {
-	b, _ := json.Marshal(map[string]any{"type": "host-ready", "claimed": claimed, "origin": testOrigin, "iceServers": []any{}})
+	e.connect(map[string]any{"claimed": claimed})
+}
+
+// connect simulates one signaling connection like signaling.Client does:
+// host-auth (returned), then host-ready with the given fields.
+func (e *testEnv) connect(fields map[string]any) hostAuthMsg {
+	msg, err := e.a.HostAuth(context.Background(), testOrigin, bytes.Repeat([]byte{7}, 32))
+	if err != nil {
+		panic(err)
+	}
+	m := map[string]any{"type": "host-ready", "origin": testOrigin, "iceServers": []any{}}
+	for k, v := range fields {
+		m[k] = v
+	}
+	b, _ := json.Marshal(m)
 	e.a.OnReady(e.srv, b)
 	e.sync()
+	return msg.(hostAuthMsg)
+}
+
+// reconnects returns how many forced reconnects the agent requested.
+func (e *testEnv) reconnects() int {
+	var n int
+	e.a.call(func() { n = e.a.reconnects })
+	return n
 }
 
 // sync waits until the agent loop processed everything posted so far.

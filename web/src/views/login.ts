@@ -82,6 +82,7 @@ function passkeyLoginView(app: App): View {
       card(
         { testid: "login-card" },
         hero("lock", "Sign in", "Use your passkey (Face ID, Touch ID, Windows Hello or your phone) to sign in. There are no passwords."),
+        app.pendingJoin ? h("p", { class: "status-line", testid: "login-join-hint", text: "Sign in first. Then you'll add the new Mac." }) : null,
         err,
         h("div", { class: "stack" }, btn),
       ),

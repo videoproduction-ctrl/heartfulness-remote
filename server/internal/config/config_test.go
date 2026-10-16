@@ -121,8 +121,24 @@ func TestTrustedProxiesAndPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.TrustedProxies) != 3 || c.TrustedProxies[1].Bits() != 32 || len(c.HostPubPin) != 32 || c.TurnPort != 3479 || c.TurnHost != "turn.example.org" {
+	if len(c.TrustedProxies) != 3 || c.TrustedProxies[1].Bits() != 32 || len(c.HostPubAllow) != 1 || len(c.HostPubAllow[0]) != 32 || c.TurnPort != 3479 || c.TurnHost != "turn.example.org" {
 		t.Fatalf("parsed: %+v", c)
+	}
+	if !c.HostAllowed(c.HostPubAllow[0]) || c.HostAllowed(make([]byte, 32)) {
+		t.Fatal("single-key allow-list")
+	}
+	// HR_HOST_PUBKEY is a comma-separated allow-list (PROTOCOL.md §10.2).
+	m["HR_HOST_PUBKEY"] = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo, AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	if c, err = Load(env(m)); err != nil || len(c.HostPubAllow) != 2 || !c.HostAllowed(make([]byte, 32)) {
+		t.Fatalf("allow-list: %v %+v", err, c)
+	}
+	m["HR_HOST_PUBKEY"] = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo,AAAA"
+	if _, err := Load(env(m)); err == nil {
+		t.Fatal("allow-list with an invalid key accepted")
+	}
+	m["HR_HOST_PUBKEY"] = ""
+	if c, err = Load(env(m)); err != nil || len(c.HostPubAllow) != 0 || !c.HostAllowed(make([]byte, 32)) {
+		t.Fatalf("empty allow-list must allow any key: %v", err)
 	}
 	for k, v := range map[string]string{
 		"HR_TRUSTED_PROXIES": "not-an-ip",

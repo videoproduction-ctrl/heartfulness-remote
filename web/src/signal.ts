@@ -3,7 +3,7 @@
 // possession of the device key with HR1/client-auth over a server nonce.
 
 import { b64 } from "./b64";
-import type { HostInfo } from "./api";
+import { type HostInfo, parseHostInfo } from "./api";
 import { b64Field, signClientAuth, type Signer } from "./hr1";
 import type { Platform } from "./platform";
 
@@ -11,9 +11,13 @@ export type Msg = Record<string, unknown> & { type: string };
 
 export type DeviceStatus = "unknown" | "pending" | "approved" | "revoked";
 
+/** A Mac in `ready.hosts`, with THIS device's approval status on it (§10.4). */
+export interface ReadyHost extends HostInfo {
+  deviceStatus: DeviceStatus;
+}
+
 export interface ReadyInfo {
-  status: DeviceStatus;
-  host: HostInfo | null;
+  hosts: ReadyHost[];
 }
 
 export type SignalState = "connecting" | "ready" | "reconnecting" | "closed" | "unauthorized";
@@ -24,21 +28,33 @@ const AUTH_TIMEOUT_MS = 15_000;
 
 type Handler = (m: Msg) => void;
 
-function parseHost(v: unknown): HostInfo | null {
-  if (!v || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
-  const h: HostInfo = {
-    pub: typeof o["pub"] === "string" ? o["pub"] : "",
-    name: typeof o["name"] === "string" ? o["name"] : "",
-    online: o["online"] === true,
-    state: typeof o["state"] === "string" ? o["state"] : "",
-  };
-  if (typeof o["sessionDeviceName"] === "string") h.sessionDeviceName = o["sessionDeviceName"];
-  return h;
-}
-
 export function parseStatus(v: unknown): DeviceStatus {
   return v === "pending" || v === "approved" || v === "revoked" ? v : "unknown";
+}
+
+const MAX_HOSTS = 20;
+
+/**
+ * Parses `ready` (§10.4: `{device:{pub}, hosts:[{…, deviceStatus}]}`). Also
+ * accepts the older single-Mac shape `{device:{status}, host:{…}}`.
+ */
+export function parseReady(m: Record<string, unknown>): ReadyInfo {
+  const hosts: ReadyHost[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(m["hosts"])) {
+    for (const x of m["hosts"]) {
+      const h = parseHostInfo(x);
+      if (!h || seen.has(h.pub)) continue;
+      seen.add(h.pub);
+      hosts.push({ ...h, deviceStatus: parseStatus((x as Record<string, unknown>)["deviceStatus"]) });
+      if (hosts.length >= MAX_HOSTS) break;
+    }
+  } else {
+    const h = parseHostInfo(m["host"]);
+    const dev = m["device"] && typeof m["device"] === "object" ? (m["device"] as Record<string, unknown>) : {};
+    if (h) hosts.push({ ...h, deviceStatus: parseStatus(dev["status"]) });
+  }
+  return { hosts };
 }
 
 export class Signal {
@@ -172,10 +188,7 @@ export class Signal {
         clearTimeout(authTimer);
         this.attempt = 0;
         this.failuresBeforeReady = 0;
-        const info: ReadyInfo = {
-          status: parseStatus((m["device"] as Record<string, unknown> | undefined)?.["status"]),
-          host: parseHost(m["host"]),
-        };
+        const info = parseReady(m);
         this.lastReady = info;
         this.setState("ready");
         if (this.firstReady) {

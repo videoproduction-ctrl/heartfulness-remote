@@ -20,6 +20,11 @@ struct MenuBarPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             StatusHeader(summary: model.summary)
+            if let line = model.macIDLine {
+                MacIDLabel(line: line)
+                    .padding(.leading, 56)   // lines up with the status title
+                    .padding(.top, -6)
+            }
 
             if let session = model.state.session {
                 SessionControls(session: session) {
@@ -67,11 +72,26 @@ struct MenuBarPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+            } else if model.needsJoin {
+                Button {
+                    model.openSetup(steps: [.pairPhone])
+                } label: {
+                    Label("Add This Mac to Your Account…", systemImage: "qrcode")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
 
             Divider()
 
             VStack(alignment: .leading, spacing: 2) {
+                if !model.settings.serverURL.isEmpty {
+                    PanelRowButton(title: AccountText.connectToAnother, systemImage: "arrow.up.right.square") {
+                        model.openWebClient()
+                    }
+                    .help(AccountText.connectToAnotherHelp)
+                }
                 PanelRowButton(title: "Open Dashboard…", systemImage: "macwindow") {
                     WindowManager.shared.showDashboard()
                 }

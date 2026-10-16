@@ -22,21 +22,30 @@ export interface ServerStatus {
   origin: string;
 }
 
+/** One Mac of the account, as the server reports it (§10.4). Untrusted display data. */
 export interface HostInfo {
   pub: string;
   name: string;
   online: boolean;
   state: string; // "available" | "in-session" | "blocked"
   sessionDeviceName?: string;
+  claimedAt?: number | string;
+  lastSeen?: number | string;
+}
+
+/** A device's approval status on one Mac (§10.4 `approvals`). */
+export interface DeviceApproval {
+  hostPub: string;
+  status: string; // "pending" | "approved" | "revoked"
 }
 
 export interface DeviceInfo {
   pub: string;
   name: string;
   kind: string;
-  status: string; // "pending" | "approved" | "revoked"
   createdAt?: number | string;
   lastSeen?: number | string;
+  approvals: DeviceApproval[];
 }
 
 export interface PasskeyInfo {
@@ -46,9 +55,115 @@ export interface PasskeyInfo {
 }
 
 export interface Me {
-  host: HostInfo | null;
+  hosts: HostInfo[];
   devices: DeviceInfo[];
   passkeys: PasskeyInfo[];
+}
+
+export interface PendingHost {
+  hostPub: string;
+  name: string;
+}
+
+export interface JoinFlow {
+  flowId: string;
+  name: string;
+  macId: string;
+}
+
+const MAX_HOSTS = 20;
+const MAX_TEXT = 200;
+
+function text(v: unknown): string {
+  return typeof v === "string" ? v.slice(0, MAX_TEXT) : "";
+}
+
+function isKey(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  try {
+    return b64(unb64Len(v, 32)) === v;
+  } catch {
+    return false;
+  }
+}
+
+function time(v: unknown): number | string | undefined {
+  return typeof v === "number" || typeof v === "string" ? v : undefined;
+}
+
+/** Sanitises one host record (drops it if its key is not a canonical 32-byte b64 key). */
+export function parseHostInfo(v: unknown): HostInfo | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (!isKey(o["pub"])) return null;
+  const h: HostInfo = { pub: o["pub"], name: text(o["name"]), online: o["online"] === true, state: text(o["state"]) };
+  if (typeof o["sessionDeviceName"] === "string" && o["sessionDeviceName"] !== "") h.sessionDeviceName = text(o["sessionDeviceName"]);
+  const ca = time(o["claimedAt"]);
+  if (ca !== undefined) h.claimedAt = ca;
+  const ls = time(o["lastSeen"]);
+  if (ls !== undefined) h.lastSeen = ls;
+  return h;
+}
+
+/** Sanitises a host list, de-duplicated by key, at most 20 entries. */
+export function parseHostList(v: unknown): HostInfo[] {
+  const out: HostInfo[] = [];
+  const seen = new Set<string>();
+  for (const x of Array.isArray(v) ? v : []) {
+    const h = parseHostInfo(x);
+    if (!h || seen.has(h.pub)) continue;
+    seen.add(h.pub);
+    out.push(h);
+    if (out.length >= MAX_HOSTS) break;
+  }
+  return out;
+}
+
+/**
+ * Normalises GET /api/me. Accepts the §10.4 shape ({hosts, devices[].approvals})
+ * and the older single-Mac shape ({host, devices[].status}).
+ */
+export function normalizeMe(raw: unknown): Me {
+  const m = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  let hosts = parseHostList(m["hosts"]);
+  if (!Array.isArray(m["hosts"])) {
+    const legacy = parseHostInfo(m["host"]);
+    hosts = legacy ? [legacy] : [];
+  }
+  const single = hosts.length === 1 ? hosts[0]!.pub : null;
+  const devices: DeviceInfo[] = [];
+  for (const x of Array.isArray(m["devices"]) ? m["devices"] : []) {
+    if (!x || typeof x !== "object") continue;
+    const d = x as Record<string, unknown>;
+    if (!isKey(d["pub"])) continue;
+    const approvals: DeviceApproval[] = [];
+    if (Array.isArray(d["approvals"])) {
+      for (const a of d["approvals"]) {
+        if (!a || typeof a !== "object") continue;
+        const ar = a as Record<string, unknown>;
+        if (isKey(ar["hostPub"]) && typeof ar["status"] === "string") approvals.push({ hostPub: ar["hostPub"], status: ar["status"] });
+      }
+    } else if (typeof d["status"] === "string" && single) {
+      approvals.push({ hostPub: single, status: d["status"] });
+    }
+    const dev: DeviceInfo = { pub: d["pub"], name: text(d["name"]), kind: text(d["kind"]), approvals };
+    const ca = time(d["createdAt"]);
+    if (ca !== undefined) dev.createdAt = ca;
+    const ls = time(d["lastSeen"]);
+    if (ls !== undefined) dev.lastSeen = ls;
+    devices.push(dev);
+  }
+  const passkeys: PasskeyInfo[] = [];
+  for (const x of Array.isArray(m["passkeys"]) ? m["passkeys"] : []) {
+    if (!x || typeof x !== "object") continue;
+    const p = x as Record<string, unknown>;
+    if (typeof p["id"] !== "string") continue;
+    const pk: PasskeyInfo = { id: p["id"], name: text(p["name"]) };
+    const ca = time(p["createdAt"]);
+    if (ca !== undefined) pk.createdAt = ca;
+    passkeys.push(pk);
+  }
+  return { hosts, devices, passkeys };
 }
 
 export interface Flow {
@@ -117,12 +232,7 @@ export class Api {
   }
 
   async me(): Promise<Me> {
-    const m = await this.call<Partial<Me>>("/api/me");
-    return {
-      host: m.host ?? null,
-      devices: Array.isArray(m.devices) ? m.devices : [],
-      passkeys: Array.isArray(m.passkeys) ? m.passkeys : [],
-    };
+    return normalizeMe(await this.call<unknown>("/api/me"));
   }
 
   turn(): Promise<{ iceServers: RTCIceServer[]; ttl?: number }> {
@@ -184,5 +294,35 @@ export class Api {
 
   passkeysDelete(proof: DeviceProof, id: string): Promise<unknown> {
     return this.call("/api/passkeys/delete", { ...proof, id });
+  }
+
+  // ------------------------------------------------------------ multiple Macs (§10.2)
+
+  /** Typed path: finds a Mac waiting to be added by its 9-digit Mac ID. */
+  async hostsPending(macId: string): Promise<PendingHost> {
+    if (!/^\d{9}$/.test(macId)) throw new Error("A Mac ID has 9 digits.");
+    const r = await this.call<Record<string, unknown> | null>(`/api/hosts/pending?macId=${encodeURIComponent(macId)}`, undefined, "GET");
+    if (!r || !isKey(r["hostPub"])) throw new ApiError(502, "bad-response", "The server sent an unexpected answer. Please try again.");
+    return { hostPub: r["hostPub"], name: text(r["name"]) };
+  }
+
+  /** Proves knowledge of the join code (claim = Kc) for that pending Mac. */
+  async joinBegin(proof: DeviceProof, hostPub: string, claim: string): Promise<JoinFlow> {
+    const r = await this.call<Record<string, unknown> | null>("/api/hosts/join/begin", { hostPub, claim, ...proof });
+    if (!r || typeof r["flowId"] !== "string" || r["flowId"] === "") {
+      throw new ApiError(502, "bad-response", "The server sent an unexpected answer. Please try again.");
+    }
+    return { flowId: r["flowId"], name: text(r["name"]), macId: typeof r["macId"] === "string" ? r["macId"] : "" };
+  }
+
+  /** Sends the setup MAC; the server forwards it to the Mac (setup-device). */
+  async joinFinish(proof: DeviceProof, flowId: string, setupMac: string): Promise<Record<string, unknown>> {
+    const r = await this.call<unknown>("/api/hosts/join/finish", { flowId, setupMac, ...proof });
+    return r && typeof r === "object" ? (r as Record<string, unknown>) : {};
+  }
+
+  /** Unbinds a Mac from the account. */
+  hostsRemove(proof: DeviceProof, hostPub: string): Promise<unknown> {
+    return this.call("/api/hosts/remove", { hostPub, ...proof });
   }
 }

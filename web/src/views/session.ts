@@ -72,8 +72,9 @@ function savePref(k: keyof Prefs, v: string | boolean): void {
 type PolicyLike = { allowsFeature?: (f: string) => boolean };
 type KeyboardAPI = { lock?: (codes?: string[]) => Promise<void>; unlock?: () => void };
 
-export function sessionView(app: App): View {
+export function sessionView(app: App, hostPub: string): View {
   const prefs = loadPrefs();
+  const macName = () => app.macName(hostPub);
   const offs: Array<() => void> = [];
   let destroyed = false;
   let session: RemoteSession | null = null;
@@ -183,9 +184,12 @@ export function sessionView(app: App): View {
   const btnHelp = tb("help", "Help and shortcuts (Ctrl+Alt+Shift+H)", "toolbar-help", () => openHelp());
   const btnDisconnect = tb("power", "Disconnect (Ctrl+Alt+Shift+Q)", "disconnect-button", () => disconnect());
   btnDisconnect.classList.add("tool-danger");
+  const toolbarMac = h("span", { class: "tool-mac", testid: "toolbar-mac-name", title: "Connected Mac", text: macName() });
   const toolbar = h(
     "div",
-    { class: "toolbar", testid: "session-toolbar", attrs: { role: "toolbar", "aria-label": "Session controls" } },
+    { class: "toolbar", testid: "session-toolbar", attrs: { role: "toolbar", "aria-label": `Session controls for ${macName()}` } },
+    toolbarMac,
+    h("span", { class: "tool-sep", attrs: { "aria-hidden": "true" } }),
     btnFullscreen,
     btnDisplay,
     btnQuality,
@@ -695,6 +699,7 @@ export function sessionView(app: App): View {
         { class: "overlay-card" },
         spinner(text),
         h("p", { class: "overlay-title", testid: "session-status", text, attrs: { "data-stage": st } }),
+        h("p", { class: "overlay-text", testid: "session-mac-name", text: macName() }),
         button({ label: "Cancel", testid: "session-cancel", variant: "tinted", onClick: () => disconnect() }),
       ),
     );
@@ -714,6 +719,7 @@ export function sessionView(app: App): View {
         { class: `overlay-card ${kind === "security" ? "tone-danger" : ""}`.trim(), testid: "session-ended", attrs: { "data-kind": kind } },
         h("div", { class: "overlay-icon" }, icon(kind === "security" ? "shield" : kind === "user" ? "power" : "warning")),
         h("p", { class: "overlay-title", testid: "session-status", text: title, attrs: { "data-stage": "ended" } }),
+        h("p", { class: "overlay-text overlay-mac", testid: "session-mac-name", text: macName() }),
         h("p", { class: "overlay-text", testid: "session-end-reason", text: reason }),
         auto ? h("p", { class: "overlay-text", testid: "session-auto-reconnect" }, spinner(""), " Reconnecting automatically…") : null,
         h(
@@ -882,7 +888,7 @@ export function sessionView(app: App): View {
   }
 
   const stageText: Record<Stage, string> = {
-    requesting: "Asking your Mac…",
+    requesting: "Asking the Mac…",
     negotiating: "Securing the connection…",
     connecting: "Connecting…",
     connected: "",
@@ -891,16 +897,14 @@ export function sessionView(app: App): View {
   function start(): void {
     const signal = app.signal;
     const signer = app.signer;
-    const pinned = app.pinned;
+    // Always the PINNED key of the chosen Mac: the answer is verified with it.
+    const pinned = app.pinBytes(hostPub);
     prevSnap = null;
     pingRtt = null;
     pings.clear();
-    if (!signal || !signer || !pinned) {
-      showEnded("error", "This device isn't ready to connect. Go back to Home and try again.");
-      return;
-    }
-    if (app.hostMismatch) {
-      showEnded("security", "The server is presenting a different Mac than the one this device trusts.");
+    toolbarMac.textContent = macName();
+    if (!signal || !signer || !pinned || !app.canUse(hostPub)) {
+      showEnded("error", "This device isn't ready to connect to this Mac. Go back to Home and try again.");
       return;
     }
     live = false;
