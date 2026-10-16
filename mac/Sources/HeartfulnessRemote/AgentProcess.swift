@@ -210,7 +210,12 @@ final class AgentProcess: @unchecked Sendable {
                 do {
                     let frames = try decoder.append(data)
                     guard let self else { return }
-                    for frame in frames { self.onFrame?(frame) }
+                    // Frames from a helper that is being stopped or replaced are dropped:
+                    // e.g. a late SIGN_REQUEST must never be answered into the new helper's stdin.
+                    for frame in frames {
+                        guard self.isCurrent(generation: myGeneration) else { break }
+                        self.onFrame?(frame)
+                    }
                 } catch {
                     Log.agent.error("IPC stream out of sync (\(String(describing: error), privacy: .public)); restarting helper")
                     self?.killIfCurrent(generation: myGeneration)
@@ -276,6 +281,12 @@ final class AgentProcess: @unchecked Sendable {
     }
 
     // MARK: Termination
+
+    private func isCurrent(generation myGeneration: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return myGeneration == generation
+    }
 
     private func killIfCurrent(generation myGeneration: Int) {
         lock.lock()

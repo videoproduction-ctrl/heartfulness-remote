@@ -100,6 +100,11 @@ final class VideoEncoder: @unchecked Sendable {
         set(session, kVTCompressionPropertyKey_DataRateLimits, limits)
     }
 
+    func applyFrameRate(_ fps: Int) {
+        guard let session else { return }
+        set(session, kVTCompressionPropertyKey_ExpectedFrameRate, NSNumber(value: max(1, fps)))
+    }
+
     private func set(_ session: VTCompressionSession, _ key: CFString, _ value: CFTypeRef?) {
         let status = VTSessionSetProperty(session, key: key, value: value)
         if status != 0 {

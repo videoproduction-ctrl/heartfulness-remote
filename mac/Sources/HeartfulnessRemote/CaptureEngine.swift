@@ -31,6 +31,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var audioAvailable = false
     private var params: StartParams?
     private var activeStream: SCStream?
+    private var activeConfig: SCStreamConfiguration?
     private var encoder: VideoEncoder?
     private var generation = 0
     private var lastPixelBuffer: CVPixelBuffer?
@@ -82,6 +83,10 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             case .bitrate(let kbps):
                 self.params?.kbps = kbps
                 self.encoder?.applyBitrate(kbps: kbps)
+                // The agent drops to 30 fps on slow connections (and back to 60).
+                if let fps = command.fps, fps > 0 {
+                    self.applyFrameRate(min(max(fps, 1), 120))
+                }
             case .display(let id):
                 guard var p = self.params else { return }
                 p.display = id
@@ -203,6 +208,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
 
         activeStream = newStream
+        activeConfig = config
         encoder = videoEncoder
         lastPixelBuffer = nil
         lastEncodeTime = 0
@@ -235,9 +241,26 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             current.stopCapture { _ in }
         }
         activeStream = nil
+        activeConfig = nil
         encoder?.invalidate()
         encoder = nil
         lastPixelBuffer = nil
+    }
+
+    /// Changes the capture and encoder frame rate of the running stream in place.
+    private func applyFrameRate(_ fps: Int) {
+        guard var p = params, p.fps != fps else { return }
+        p.fps = fps
+        params = p
+        encoder?.applyFrameRate(fps)
+        guard let stream = activeStream, let config = activeConfig else { return }
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
+        stream.updateConfiguration(config) { error in
+            if let error {
+                Log.capture.error("Frame rate change failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        Log.capture.notice("Frame rate now \(fps, privacy: .public) fps")
     }
 
     private func startIdleTimer() {

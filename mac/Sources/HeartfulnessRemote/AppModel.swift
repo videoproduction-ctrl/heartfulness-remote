@@ -669,8 +669,13 @@ final class AppModel: ObservableObject {
         if notificationsAllowed != allowed { notificationsAllowed = allowed }
     }
 
+    /// The first time, macOS shows its own prompt (with an "Open System Settings" button);
+    /// after that the request does nothing visible, so open the settings pane directly.
     func requestScreenRecording() {
-        if !Permissions.requestScreenRecording() {
+        let askedKey = "hr.askedScreenRecording"
+        let askedBefore = UserDefaults.standard.bool(forKey: askedKey)
+        UserDefaults.standard.set(true, forKey: askedKey)
+        if !Permissions.requestScreenRecording() && askedBefore {
             Permissions.open(.screenRecording)
         }
         refreshPermissions()
@@ -681,12 +686,15 @@ final class AppModel: ObservableObject {
         refreshPermissions()
     }
 
+    /// Shows the macOS prompt; if notifications were already turned off (no prompt appears
+    /// any more), opens Notification settings instead.
     func requestNotifications() {
+        if notificationsAllowed == false {
+            Permissions.open(.notifications)
+            return
+        }
         notifier.requestAuthorization { granted in
-            onMain {
-                AppModel.shared.setNotificationsAllowed(granted)
-                if !granted { Permissions.open(.notifications) }
-            }
+            onMain { AppModel.shared.setNotificationsAllowed(granted) }
         }
     }
 

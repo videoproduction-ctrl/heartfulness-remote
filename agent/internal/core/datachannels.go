@@ -404,24 +404,30 @@ func (s *Session) onFileChunk(m webrtc.DataChannelMessage) {
 	var id [16]byte
 	copy(id[:], m.Data[:16])
 	chunk := m.Data[16:]
-	s.dmu.Lock()
-	u, ok := s.uploads[id]
-	s.dmu.Unlock()
-	if !ok {
-		return
-	}
 	idStr := proto.B64(id[:])
 	if len(chunk) > files.ChunkSize {
 		s.failUpload(id, idStr, "chunk-too-large")
 		return
 	}
-	if err := u.up.Write(chunk); err != nil {
+	// Look up and write under one lock: file-end arrives on the control
+	// channel's goroutine, and maybeFinish must never observe a half-applied
+	// write or finish an upload while a chunk is still being written.
+	s.dmu.Lock()
+	u, ok := s.uploads[id]
+	var err error
+	if ok {
+		if err = u.up.Write(chunk); err == nil {
+			u.lastData = s.a.now()
+		}
+	}
+	s.dmu.Unlock()
+	if !ok {
+		return
+	}
+	if err != nil {
 		s.failUpload(id, idStr, "write-failed")
 		return
 	}
-	s.dmu.Lock()
-	u.lastData = s.a.now()
-	s.dmu.Unlock()
 	s.maybeFinish(id)
 }
 

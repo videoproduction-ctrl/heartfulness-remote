@@ -145,8 +145,8 @@ status "START provisioning https://$DOMAIN (code $(source_rev))"
 step "1/9: installing system updates and packages (this can take a few minutes)"
 retry 4 15 run "${APT[@]}" update
 retry 3 15 run "${APT[@]}" upgrade
-retry 3 15 run "${APT[@]}" install docker.io docker-compose-v2 ufw fail2ban python3-systemd \
-	unattended-upgrades openssl iproute2 git ca-certificates curl
+retry 3 15 run "${APT[@]}" install docker.io docker-compose-v2 docker-buildx ufw fail2ban \
+	python3-systemd unattended-upgrades openssl iproute2 git ca-certificates curl
 
 # ---------------------------------------------------------------------------
 step "2/9: enabling automatic security updates"
@@ -188,7 +188,11 @@ else
 	rm -f /etc/ssh/sshd_config.d/10-heartfulness-remote.conf
 	status "NOTE: SSH config check failed; left SSH settings unchanged"
 fi
-if ! cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | grep -qE '^[[:space:]]*(ssh-|ecdsa-|sk-)'; then
+has_key=""
+for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
+	if [ -f "$f" ] && grep -qE '^[[:space:]]*(ssh-|ecdsa-|sk-)' "$f"; then has_key=yes; fi
+done
+if [ -z "$has_key" ]; then
 	status "NOTE: no SSH key is installed, so SSH login is disabled. That is fine: setup and updates do not need it."
 fi
 
@@ -215,6 +219,15 @@ backend = systemd
 [sshd]
 enabled = true
 EOF
+# fail2ban's own log (ban events with IPs) goes to the 7-day journal, not to
+# /var/log/fail2ban.log (kept 4 weeks by logrotate). Its ban database keeps
+# entries for 1 day.
+cat >/etc/fail2ban/fail2ban.d/heartfulness-remote.local <<'EOF'
+[Definition]
+logtarget = SYSTEMD-JOURNAL
+dbpurgeage = 1d
+EOF
+rm -f /var/log/fail2ban.log /var/log/fail2ban.log.[0-9]*
 run systemctl enable fail2ban
 run systemctl restart fail2ban
 
@@ -365,7 +378,8 @@ run systemctl enable --now heartfulness-rebuild.timer
 
 # ---------------------------------------------------------------------------
 step "8/9: building and starting Heartfulness Remote (first time: about 5 minutes)"
-retry 3 30 run "${COMPOSE[@]}" pull --quiet caddy coturn
+# Docker Hub limits anonymous pulls per hour; back off for up to ~8 minutes.
+retry 5 30 run "${COMPOSE[@]}" pull --quiet caddy coturn
 retry 3 30 run "${COMPOSE[@]}" build --pull server
 run "${COMPOSE[@]}" up -d --remove-orphans
 # Bind-mounted config files are not watched by compose: restart on change.
