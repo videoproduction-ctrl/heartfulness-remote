@@ -31,6 +31,8 @@ interface Prefs {
   muted: boolean;
 }
 
+const AUTO_RECONNECT_MAX = 3;
+
 const QUALITY_LABEL: Record<Quality, string> = {
   auto: "Auto",
   sharp: "Sharp — for video editing",
@@ -67,6 +69,7 @@ function savePref(k: keyof Prefs, v: string | boolean): void {
   }
 }
 
+type PolicyLike = { allowsFeature?: (f: string) => boolean };
 type KeyboardAPI = { lock?: (codes?: string[]) => Promise<void>; unlock?: () => void };
 
 export function sessionView(app: App): View {
@@ -80,6 +83,11 @@ export function sessionView(app: App): View {
   let activeDisplay: string | number | null = null;
   let features = { audio: true, clipboard: true, files: true };
   let keyboardLocked = false;
+  /** True once media is flowing for the current session (overlay hidden). */
+  let live = false;
+  /** Automatic reconnects after a dropped connection (reset once live again). */
+  let autoTries = 0;
+  let autoTimer: ReturnType<typeof setTimeout> | null = null;
   let wakeLock: { release(): Promise<void> } | null = null;
   let filesSheet: Sheet | null = null;
   let renderFilesPanel: (() => void) | null = null;
@@ -97,6 +105,15 @@ export function sessionView(app: App): View {
   const root = h("div", { class: "session", testid: "session-view" });
   const video = h("video", { class: "session-video", testid: "session-video", attrs: { playsinline: true, autoplay: true } });
   video.disablePictureInPicture = true;
+  // Safety net: once frames are actually playing on a connected session, the
+  // connecting overlay must not stay on top of the picture.
+  video.addEventListener("playing", () => {
+    if (session?.connected && !session.ended && !overlay.hidden && root.dataset["stage"] !== "ended") {
+      live = true;
+      setStage("connected");
+      overlay.hidden = true;
+    }
+  });
   (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
   const surface = h("div", { class: "surface", testid: "session-surface", attrs: { tabindex: 0, "aria-label": "Your Mac's screen" } });
   const stage = h("div", { class: "stage" }, video, surface);
@@ -224,6 +241,7 @@ export function sessionView(app: App): View {
     btnAudio.disabled = !features.audio;
     replace(btnAudio, icon(video.muted ? "speaker-off" : "speaker"));
     setPressed(btnAudio, !video.muted);
+    btnAudio.dataset["muted"] = String(video.muted);
     btnClipboard.disabled = !features.clipboard;
     setPressed(btnClipboard, prefs.clipboard && features.clipboard);
     btnFiles.disabled = !features.files;
@@ -239,13 +257,26 @@ export function sessionView(app: App): View {
     popoverEl = null;
   }
 
-  function popover(anchor: HTMLElement, testid: string, items: Array<{ label: string; hint?: string; testid: string; checked?: boolean; onSelect: () => void }>): void {
+  function popover(
+    anchor: HTMLElement,
+    testid: string,
+    items: Array<{ label: string; hint?: string; testid: string; value?: string; checked?: boolean; onSelect: () => void }>,
+  ): void {
     closePopover();
     const menu = h("div", { class: "popover", testid, attrs: { role: "menu" } });
     for (const it of items) {
       const b = h(
         "button",
-        { class: "popover-item", testid: it.testid, attrs: { type: "button", role: it.checked === undefined ? "menuitem" : "menuitemradio", "aria-checked": it.checked === undefined ? null : String(it.checked) } },
+        {
+          class: "popover-item",
+          testid: it.testid,
+          attrs: {
+            type: "button",
+            role: it.checked === undefined ? "menuitem" : "menuitemradio",
+            "aria-checked": it.checked === undefined ? null : String(it.checked),
+            "data-value": it.value,
+          },
+        },
         h("span", { class: "popover-check" }, it.checked ? icon("check") : null),
         h("span", { class: "popover-label" }, h("span", { text: it.label }), it.hint ? h("small", { text: it.hint }) : null),
       );
@@ -289,6 +320,7 @@ export function sessionView(app: App): View {
         label: d.name || `Display ${i + 1}`,
         hint: `${d.width}×${d.height}${d.primary ? " · main" : ""}`,
         testid: "display-option",
+        value: String(d.id),
         checked: d.id === activeDisplay,
         onSelect: () => {
           if (session?.sendControl({ t: "select-display", id: d.id })) activeDisplay = d.id;
@@ -310,7 +342,8 @@ export function sessionView(app: App): View {
       (["auto", "sharp", "smooth"] as Quality[]).map((q) => ({
         label: QUALITY_LABEL[q],
         hint: QUALITY_HINT[q],
-        testid: `quality-${q}`,
+        testid: "quality-option",
+        value: q,
         checked: prefs.quality === q,
         onSelect: () => setQuality(q),
       })),
@@ -322,7 +355,7 @@ export function sessionView(app: App): View {
       {
         label: "Sync clipboard automatically",
         hint: "Copy on one side, paste on the other",
-        testid: "clipboard-sync-toggle",
+        testid: "clipboard-toggle",
         checked: prefs.clipboard,
         onSelect: () => {
           prefs.clipboard = !prefs.clipboard;
@@ -467,7 +500,7 @@ export function sessionView(app: App): View {
     const active = !["done", "error", "cancelled"].includes(t.state);
     return h(
       "div",
-      { class: `transfer transfer-${t.state}`, testid: "transfer-item", attrs: { "data-state": t.state, "data-dir": t.dir } },
+      { class: `transfer transfer-${t.state}`, testid: "transfer-item", attrs: { "data-state": t.state, "data-dir": t.dir, "data-name": t.name } },
       h("span", { class: "item-icon" }, icon(t.dir === "up" ? "upload" : "download")),
       h(
         "div",
@@ -516,16 +549,34 @@ export function sessionView(app: App): View {
             ? entries.map((e) => {
                 const row = h(
                   "div",
-                  { class: "item file-entry", testid: "file-entry", attrs: { "data-name": e.name, "data-dir": e.dir ? "1" : "0" } },
+                  {
+                    class: `item file-entry${e.dir ? " is-folder" : ""}`,
+                    testid: "file-entry",
+                    attrs: e.dir
+                      ? { "data-name": e.name, "data-dir": "1", role: "button", tabindex: 0, "aria-label": `Open folder ${e.name}` }
+                      : { "data-name": e.name, "data-dir": "0" },
+                  },
                   h("span", { class: "item-icon" }, icon(e.dir ? "folder" : "file")),
                   h("div", { class: "item-text" }, h("strong", { text: e.name }), h("span", { class: "muted", text: e.dir ? "Folder" : formatBytes(e.size) })),
                   e.dir
-                    ? iconButton("forward", `Open ${e.name}`, "file-entry-open", () => void go(joinPath(path, e.name)))
-                    : iconButton("download", `Download ${e.name}`, "file-download", () => {
+                    ? iconButton("forward", `Open ${e.name}`, "folder-open", () => void go(joinPath(path, e.name)))
+                    : iconButton("download", `Download ${e.name}`, "download-button", () => {
                         f.download(joinPath(path, e.name));
                         toast(`Downloading “${e.name}”…`);
                       }),
                 );
+                if (e.dir) {
+                  // The whole folder row opens it (click, Enter or Space).
+                  const open = () => void go(joinPath(path, e.name));
+                  row.addEventListener("click", (ev) => {
+                    if (!(ev.target instanceof Element && ev.target.closest("button"))) open();
+                  });
+                  row.addEventListener("keydown", (ev) => {
+                    if (ev.target !== row || (ev.key !== "Enter" && ev.key !== " ")) return;
+                    ev.preventDefault();
+                    open();
+                  });
+                }
                 return row;
               })
             : h("p", { class: "muted", text: "This folder is empty." }),
@@ -564,7 +615,7 @@ export function sessionView(app: App): View {
         h(
           "div",
           { class: "stack" },
-          button({ label: "Choose files…", testid: "files-upload", icon: "upload", variant: "primary", onClick: () => uploadInput.click() }),
+          button({ label: "Choose files…", testid: "upload-button", icon: "upload", variant: "primary", onClick: () => uploadInput.click() }),
           h("p", { class: "hint", text: "Or drag files onto the screen. They're saved in Downloads › Heartfulness Remote on your Mac." }),
         ),
         transfersList,
@@ -629,7 +680,13 @@ export function sessionView(app: App): View {
   });
 
   // ---------------------------------------------------------- overlay states
-  function showConnecting(text: string): void {
+  function setStage(st: Stage | "ended"): void {
+    root.dataset["stage"] = st;
+  }
+
+  function showConnecting(st: Stage): void {
+    const text = stageText[st];
+    setStage(st);
     overlay.hidden = false;
     replace(
       overlay,
@@ -637,13 +694,15 @@ export function sessionView(app: App): View {
         "div",
         { class: "overlay-card" },
         spinner(text),
-        h("p", { class: "overlay-title", testid: "session-status", text }),
+        h("p", { class: "overlay-title", testid: "session-status", text, attrs: { "data-stage": st } }),
         button({ label: "Cancel", testid: "session-cancel", variant: "tinted", onClick: () => disconnect() }),
       ),
     );
   }
 
-  function showEnded(kind: EndKind, reason: string): void {
+  function showEnded(kind: EndKind, reason: string, auto = false): void {
+    live = false;
+    setStage("ended");
     overlay.hidden = false;
     pill.hidden = true;
     toolbarWrap.classList.add("is-hidden");
@@ -654,13 +713,22 @@ export function sessionView(app: App): View {
         "div",
         { class: `overlay-card ${kind === "security" ? "tone-danger" : ""}`.trim(), testid: "session-ended", attrs: { "data-kind": kind } },
         h("div", { class: "overlay-icon" }, icon(kind === "security" ? "shield" : kind === "user" ? "power" : "warning")),
-        h("p", { class: "overlay-title", text: title }),
+        h("p", { class: "overlay-title", testid: "session-status", text: title, attrs: { "data-stage": "ended" } }),
         h("p", { class: "overlay-text", testid: "session-end-reason", text: reason }),
+        auto ? h("p", { class: "overlay-text", testid: "session-auto-reconnect" }, spinner(""), " Reconnecting automatically…") : null,
         h(
           "div",
           { class: "row-center" },
-          button({ label: "Back to Home", testid: "session-home", variant: "tinted", onClick: () => app.goHome() }),
-          button({ label: "Reconnect", testid: "session-reconnect", variant: "primary", icon: "refresh", onClick: () => reconnect() }),
+          button({
+            label: "Back to Home",
+            testid: "session-home",
+            variant: "tinted",
+            onClick: () => {
+              cancelAutoReconnect();
+              app.goHome();
+            },
+          }),
+          button({ label: "Reconnect", testid: "reconnect-button", variant: "primary", icon: "refresh", onClick: () => reconnect() }),
         ),
       ),
     );
@@ -777,6 +845,10 @@ export function sessionView(app: App): View {
   async function acquireWakeLock(): Promise<void> {
     try {
       const wl = (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+      // Skip quietly when the server's Permissions-Policy disallows it.
+      const pp = (document as Document & { permissionsPolicy?: PolicyLike; featurePolicy?: PolicyLike }).permissionsPolicy ??
+        (document as Document & { featurePolicy?: PolicyLike }).featurePolicy;
+      if (pp && typeof pp.allowsFeature === "function" && !pp.allowsFeature("screen-wake-lock")) return;
       if (wl && document.visibilityState === "visible") wakeLock = await wl.request("screen");
     } catch {
       wakeLock = null;
@@ -831,13 +903,18 @@ export function sessionView(app: App): View {
       showEnded("security", "The server is presenting a different Mac than the one this device trusts.");
       return;
     }
-    showConnecting(stageText.requesting);
+    live = false;
+    showConnecting("requesting");
     const s = new RemoteSession(
       { signal, api: app.api, signer, pinnedHost: pinned },
       {
         stage: (st) => {
           if (s !== session) return;
           if (st === "connected") {
+            if (live) return;
+            live = true;
+            autoTries = 0;
+            setStage("connected");
             overlay.hidden = true;
             pill.hidden = false;
             showToolbar(3500);
@@ -845,8 +922,9 @@ export function sessionView(app: App): View {
             statsTimer = setInterval(() => void updateStats(), 1000);
             pingTimer = setInterval(sendPing, 2000);
             void acquireWakeLock();
-          } else {
-            showConnecting(stageText[st]);
+          } else if (!live) {
+            // Never cover a live session with a stale "Connecting…" card.
+            showConnecting(st);
           }
         },
         track: (stream) => {
@@ -866,10 +944,17 @@ export function sessionView(app: App): View {
         },
         end: (kind, reason) => {
           if (s !== session) return;
+          const wasLive = live;
           teardown();
           if (destroyed) return;
           if (kind === "user") {
             app.goHome();
+            return;
+          }
+          // A live session that dropped (Wi-Fi blip, sleep, network change):
+          // try again on our own a few times before asking the owner.
+          if (kind === "network" && (wasLive || autoTries > 0) && autoTries < AUTO_RECONNECT_MAX) {
+            scheduleAutoReconnect(reason);
             return;
           }
           showEnded(kind, reason);
@@ -937,12 +1022,48 @@ export function sessionView(app: App): View {
     }
   }
 
+  function cancelAutoReconnect(): void {
+    if (autoTimer) clearTimeout(autoTimer);
+    autoTimer = null;
+  }
+
+  function scheduleAutoReconnect(reason: string): void {
+    autoTries++;
+    showEnded("network", reason, true);
+    const attempt = () => {
+      autoTimer = null;
+      if (destroyed || root.dataset["stage"] !== "ended") return;
+      if (app.signalState === "ready") {
+        start();
+        return;
+      }
+      // Wait (bounded) for the server connection to come back first.
+      const off = app.on("signal", () => {
+        if (app.signalState !== "ready") return;
+        off();
+        if (autoTimer) clearTimeout(autoTimer);
+        autoTimer = null;
+        if (!destroyed && root.dataset["stage"] === "ended") start();
+      });
+      offs.push(off);
+      autoTimer = setTimeout(() => {
+        off();
+        autoTimer = null;
+        if (!destroyed && root.dataset["stage"] === "ended") showEnded("network", reason);
+      }, 30_000);
+    };
+    autoTimer = setTimeout(attempt, 1500 * 2 ** (autoTries - 1));
+  }
+
   function disconnect(): void {
+    cancelAutoReconnect();
     if (session && !session.ended) session.end("user", "You disconnected.");
     else app.goHome();
   }
 
   function reconnect(): void {
+    cancelAutoReconnect();
+    autoTries = 0;
     if (session && !session.ended) session.end("user", "Reconnecting.", true);
     start();
   }
@@ -956,6 +1077,7 @@ export function sessionView(app: App): View {
     el: root,
     destroy() {
       destroyed = true;
+      cancelAutoReconnect();
       if (session && !session.ended) session.end("user", "Left the session.");
       teardown();
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);

@@ -79,8 +79,9 @@ export function errorMessage(e: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export function errorBox(testid: string): HTMLParagraphElement {
-  const p = h("p", { class: "error-box", testid, attrs: { role: "alert" } });
+/** The view's error line: data-testid="error-message", data-scope=<form>. */
+export function errorBox(scope: string): HTMLParagraphElement {
+  const p = h("p", { class: "error-box", testid: "error-message", attrs: { role: "alert", "data-scope": scope } });
   p.hidden = true;
   return p;
 }
@@ -104,7 +105,7 @@ export function toast(text: string, level: "info" | "error" | "success" = "info"
     toastRegion = h("div", { class: "toasts", testid: "toasts", attrs: { "aria-live": "polite", role: "status" } });
     document.body.appendChild(toastRegion);
   }
-  const t = h("div", { class: `toast toast-${level}`, testid: "toast", text });
+  const t = h("div", { class: `toast toast-${level}`, testid: "toast", text, attrs: { "data-level": level } });
   toastRegion.appendChild(t);
   setTimeout(() => {
     t.classList.add("toast-out");
@@ -160,10 +161,12 @@ export function confirmDialog(o: { title: string; text: string; confirm: string;
         h(
           "div",
           { class: "row-end" },
-          button({ label: "Cancel", testid: `${tid}-cancel`, onClick: () => s.close() }),
+          // Generic ids: only one confirmation is ever open; the dialog itself
+          // carries the specific id (e.g. "block-confirm").
+          button({ label: "Cancel", testid: "confirm-cancel", onClick: () => s.close() }),
           button({
             label: o.confirm,
-            testid: `${tid}-ok`,
+            testid: "confirm-ok",
             variant: o.danger ? "danger" : "primary",
             onClick: () => {
               result = true;

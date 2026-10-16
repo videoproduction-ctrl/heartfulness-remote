@@ -20,12 +20,17 @@ const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 
 	"frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'"
 
 // PermissionsPolicy disables powerful features except the ones the remote
-// desktop client needs on its own origin.
-const PermissionsPolicy = "accelerometer=(), ambient-light-sensor=(), autoplay=(self), bluetooth=(), " +
-	"camera=(), display-capture=(), encrypted-media=(), geolocation=(), gyroscope=(), hid=(), " +
-	"magnetometer=(), microphone=(), midi=(), payment=(), " +
-	"publickey-credentials-create=(self), publickey-credentials-get=(self), screen-wake-lock=(), " +
-	"serial=(), usb=(), xr-spatial-tracking=(), browsing-topics=(), " +
+// desktop client needs on its own origin (passkeys, autoplay of the remote
+// screen, fullscreen, clipboard sync, keyboard layout, and the screen wake
+// lock that keeps the display on during a session). Only feature names that
+// current Chromium recognises are listed: unknown names (for example
+// ambient-light-sensor, bluetooth) only produce console errors.
+const PermissionsPolicy = "accelerometer=(), autoplay=(self), browsing-topics=(), camera=(), " +
+	"display-capture=(), encrypted-media=(), geolocation=(), gyroscope=(), hid=(), " +
+	"identity-credentials-get=(), idle-detection=(), local-fonts=(), magnetometer=(), " +
+	"microphone=(), midi=(), otp-credentials=(), payment=(), " +
+	"publickey-credentials-create=(self), publickey-credentials-get=(self), " +
+	"screen-wake-lock=(self), serial=(), usb=(), xr-spatial-tracking=(), " +
 	"fullscreen=(self), clipboard-read=(self), clipboard-write=(self), keyboard-map=(self)"
 
 func (s *Server) setSecurityHeaders(w http.ResponseWriter) {

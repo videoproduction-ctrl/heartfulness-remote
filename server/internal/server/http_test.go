@@ -33,14 +33,58 @@ func checkSecurityHeaders(t *testing.T, r resp, hsts bool) {
 			t.Errorf("CSP missing %q", d)
 		}
 	}
-	pp := r.hdr.Get("Permissions-Policy")
-	for _, d := range []string{"camera=()", "microphone=()", "geolocation=()", "payment=()", "usb=()", "fullscreen=(self)", "clipboard-read=(self)", "clipboard-write=(self)", "keyboard-map=(self)"} {
-		if !strings.Contains(pp, d) {
-			t.Errorf("Permissions-Policy missing %q", d)
-		}
+	if got := r.hdr.Get("Permissions-Policy"); got != PermissionsPolicy {
+		t.Errorf("Permissions-Policy = %q, want %q", got, PermissionsPolicy)
 	}
 	if got := r.hdr.Get("Strict-Transport-Security"); (got != "") != hsts {
 		t.Errorf("HSTS = %q, want present=%v", got, hsts)
+	}
+}
+
+// chromiumFeatures are the Permissions-Policy feature names Chromium
+// recognises (document.featurePolicy.features() in Chrome 155, limited to the
+// ones relevant here). A name outside this list is ignored by the browser and
+// logs "Unrecognized feature" on every page load.
+var chromiumFeatures = map[string]bool{
+	"accelerometer": true, "autoplay": true, "browsing-topics": true, "camera": true,
+	"clipboard-read": true, "clipboard-write": true, "display-capture": true,
+	"encrypted-media": true, "fullscreen": true, "geolocation": true, "gyroscope": true,
+	"hid": true, "identity-credentials-get": true, "idle-detection": true,
+	"keyboard-map": true, "local-fonts": true, "magnetometer": true, "microphone": true,
+	"midi": true, "otp-credentials": true, "payment": true,
+	"publickey-credentials-create": true, "publickey-credentials-get": true,
+	"screen-wake-lock": true, "serial": true, "usb": true, "xr-spatial-tracking": true,
+}
+
+func TestPermissionsPolicy(t *testing.T) {
+	got := map[string]string{}
+	for _, d := range strings.Split(PermissionsPolicy, ",") {
+		name, allow, ok := strings.Cut(strings.TrimSpace(d), "=")
+		if !ok || (allow != "()" && allow != "(self)") {
+			t.Fatalf("malformed directive %q", d)
+		}
+		if _, dup := got[name]; dup {
+			t.Errorf("duplicate feature %q", name)
+		}
+		if !chromiumFeatures[name] {
+			t.Errorf("feature %q is not recognised by Chromium (console noise)", name)
+		}
+		got[name] = allow
+	}
+	// What the remote-desktop client needs on its own origin.
+	for _, f := range []string{"fullscreen", "clipboard-read", "clipboard-write", "keyboard-map",
+		"screen-wake-lock", "publickey-credentials-create", "publickey-credentials-get", "autoplay"} {
+		if got[f] != "(self)" {
+			t.Errorf("%s = %q, want (self)", f, got[f])
+		}
+	}
+	// Everything powerful it does not need stays off.
+	for _, f := range []string{"camera", "microphone", "geolocation", "payment", "usb", "serial",
+		"hid", "midi", "display-capture", "encrypted-media", "accelerometer", "gyroscope",
+		"magnetometer", "xr-spatial-tracking", "browsing-topics", "idle-detection", "local-fonts"} {
+		if got[f] != "()" {
+			t.Errorf("%s = %q, want ()", f, got[f])
+		}
 	}
 }
 
@@ -89,10 +133,10 @@ func TestStaticFiles(t *testing.T) {
 		{"/style.css", "text/css; charset=utf-8", "no-cache", 200},
 		{"/manifest.webmanifest", "application/manifest+json", "no-cache", 200},
 		{"/icons/icon.svg", "image/svg+xml", "no-cache", 200},
-		{"/devices", "text/html; charset=utf-8", "no-cache", 200},        // SPA fallback
-		{"/session/abc", "text/html; charset=utf-8", "no-cache", 200},    // SPA fallback
-		{"/missing.js", "", "", 404},                                     // has an extension: no fallback
-		{"/.env", "", "", 404},                                           // dotfiles never served
+		{"/devices", "text/html; charset=utf-8", "no-cache", 200},            // SPA fallback
+		{"/session/abc", "text/html; charset=utf-8", "no-cache", 200},        // SPA fallback
+		{"/missing.js", "", "", 404},                                         // has an extension: no fallback
+		{"/.env", "", "", 404},                                               // dotfiles never served
 		{"/api/unknown", "application/json; charset=utf-8", "no-store", 404}, // no fallback for /api
 		{"/ws/unknown", "application/json; charset=utf-8", "", 404},
 	}
@@ -358,14 +402,14 @@ func TestClientIPFromTrustedProxyOnly(t *testing.T) {
 		r    *http.Request
 		want string
 	}{
-		{mk("203.0.113.5:1234", "1.2.3.4"), "203.0.113.5"},                          // untrusted peer: XFF ignored
-		{mk("127.0.0.1:1234", "1.2.3.4"), "1.2.3.4"},                                // trusted proxy
-		{mk("127.0.0.1:1234", "6.6.6.6, 1.2.3.4"), "1.2.3.4"},                       // right-most untrusted
-		{mk("127.0.0.1:1234", "6.6.6.6", "1.2.3.4, 127.0.0.1"), "1.2.3.4"},          // skip trusted hops
-		{mk("127.0.0.1:1234"), "127.0.0.1"},                                         // no header
-		{mk("127.0.0.1:1234", "garbage"), "127.0.0.1"},                              // unparseable
-		{mk("[::1]:1234", "2001:db8::1"), "2001:db8::1"},                            // IPv6
-		{mk("127.0.0.1:1234", "[2001:db8::2]:443"), "2001:db8::2"},                  // with port
+		{mk("203.0.113.5:1234", "1.2.3.4"), "203.0.113.5"},                 // untrusted peer: XFF ignored
+		{mk("127.0.0.1:1234", "1.2.3.4"), "1.2.3.4"},                       // trusted proxy
+		{mk("127.0.0.1:1234", "6.6.6.6, 1.2.3.4"), "1.2.3.4"},              // right-most untrusted
+		{mk("127.0.0.1:1234", "6.6.6.6", "1.2.3.4, 127.0.0.1"), "1.2.3.4"}, // skip trusted hops
+		{mk("127.0.0.1:1234"), "127.0.0.1"},                                // no header
+		{mk("127.0.0.1:1234", "garbage"), "127.0.0.1"},                     // unparseable
+		{mk("[::1]:1234", "2001:db8::1"), "2001:db8::1"},                   // IPv6
+		{mk("127.0.0.1:1234", "[2001:db8::2]:443"), "2001:db8::2"},         // with port
 	}
 	for i, tc := range cases {
 		if got := e.srv.clientIP(tc.r).String(); got != tc.want {

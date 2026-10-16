@@ -45,7 +45,7 @@ export function errorView(app: App, e: unknown, retry: () => void): View {
       card(
         { testid: "error-card" },
         hero("warning", "Something went wrong", undefined, "tone-warn"),
-        h("p", { class: "center", testid: "error-text", text: errorMessage(e) }),
+        h("p", { class: "center", testid: "error-message", attrs: { "data-scope": "error-view", role: "alert" }, text: errorMessage(e) }),
         h("div", { class: "stack" }, button({ label: "Try again", testid: "error-retry", variant: "primary", large: true, onClick: retry })),
       ),
       app.platform.kind === "tauri"

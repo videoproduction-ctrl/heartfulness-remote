@@ -168,8 +168,10 @@ worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors
 'none'; require-trusted-types-for 'script'; trusted-types 'none'`), HSTS,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, COOP
 `same-origin`, CORP `same-origin`, `Permissions-Policy` (camera, microphone,
-geolocation, payment, usb… disabled; `fullscreen`, `clipboard-read`,
-`clipboard-write`, `keyboard-map` = self).
+geolocation, payment, usb, serial, hid, midi, display-capture… disabled;
+`fullscreen`, `clipboard-read`, `clipboard-write`, `keyboard-map`,
+`screen-wake-lock`, `publickey-credentials-*`, `autoplay` = self; only feature
+names current Chromium recognises, so the header logs no console errors).
 
 Rate limiting (per client IP, behind the trusted reverse proxy): general
 `/api/*` 5 req/s burst 20; auth endpoints (`setup/*`, `login/*`, `link/*`)

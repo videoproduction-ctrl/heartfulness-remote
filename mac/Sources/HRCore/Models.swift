@@ -8,19 +8,23 @@ public struct DeviceRef: Codable, Equatable, Hashable, Sendable {
     public var pub: String
     public var name: String
     public var kind: String
+    /// Display fingerprint of the device key ("abcd-efgh-…"); "" if the agent sent none.
+    public var fingerprint: String
 
-    public init(pub: String = "", name: String, kind: String = "") {
+    public init(pub: String = "", name: String, kind: String = "", fingerprint: String = "") {
         self.pub = pub
         self.name = name
         self.kind = kind
+        self.fingerprint = fingerprint
     }
 
-    private enum CodingKeys: String, CodingKey { case pub, name, kind }
+    private enum CodingKeys: String, CodingKey { case pub, name, kind, fingerprint }
 
     public init(from decoder: Decoder) throws {
         var pub = ""
         var name = ""
         var kind = ""
+        var fingerprint = ""
         if let single = try? decoder.singleValueContainer(), let text = try? single.decode(String.self) {
             name = text
         } else {
@@ -28,10 +32,12 @@ public struct DeviceRef: Codable, Equatable, Hashable, Sendable {
             pub = c.lenientString(.pub) ?? ""
             name = c.lenientString(.name) ?? ""
             kind = c.lenientString(.kind) ?? ""
+            fingerprint = c.lenientString(.fingerprint) ?? ""
         }
         self.pub = pub
         self.name = name
         self.kind = kind
+        self.fingerprint = fingerprint
     }
 
     /// Name to show in the UI and notifications.
@@ -62,22 +68,26 @@ public struct SessionInfo: Codable, Equatable, Sendable {
     /// "direct" | "relay"
     public var transport: String?
     public var rttMs: Double?
+    /// "h264" | "h265" (Go: omitempty)
+    public var codec: String?
 
-    public init(device: DeviceRef, since: Timestamp? = nil, transport: String? = nil, rttMs: Double? = nil) {
+    public init(device: DeviceRef, since: Timestamp? = nil, transport: String? = nil, rttMs: Double? = nil, codec: String? = nil) {
         self.device = device
         self.since = since
         self.transport = transport
         self.rttMs = rttMs
+        self.codec = codec
     }
 
-    private enum CodingKeys: String, CodingKey { case device, since, transport, rttMs }
+    private enum CodingKeys: String, CodingKey { case device, since, transport, rttMs, codec }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         device = (try? c.decodeIfPresent(DeviceRef.self, forKey: .device)) ?? DeviceRef(name: "")
         since = c.lenientTimestamp(.since)
-        transport = c.lenientString(.transport)
+        transport = c.lenientString(.transport).flatMap { $0.isEmpty ? nil : $0 }
         rttMs = c.lenientDouble(.rttMs)
+        codec = c.lenientString(.codec).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public var isRelayed: Bool { transport?.lowercased() == "relay" }
@@ -125,20 +135,24 @@ public struct TrustedDevice: Codable, Equatable, Identifiable, Sendable {
     public var pub: String
     public var name: String
     public var kind: String
+    /// Unix seconds in Go; 0 (never) decodes as nil.
     public var addedAt: Timestamp?
     public var lastUsed: Timestamp?
+    /// Display fingerprint of the device key, e.g. "abcd-efgh-ijkl-mnop".
+    public var fingerprint: String
 
     public var id: String { pub }
 
-    public init(pub: String, name: String, kind: String, addedAt: Timestamp? = nil, lastUsed: Timestamp? = nil) {
+    public init(pub: String, name: String, kind: String, addedAt: Timestamp? = nil, lastUsed: Timestamp? = nil, fingerprint: String = "") {
         self.pub = pub
         self.name = name
         self.kind = kind
         self.addedAt = addedAt
         self.lastUsed = lastUsed
+        self.fingerprint = fingerprint
     }
 
-    private enum CodingKeys: String, CodingKey { case pub, name, kind, addedAt, lastUsed }
+    private enum CodingKeys: String, CodingKey { case pub, name, kind, addedAt, lastUsed, fingerprint }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -147,6 +161,7 @@ public struct TrustedDevice: Codable, Equatable, Identifiable, Sendable {
         kind = c.lenientString(.kind) ?? ""
         addedAt = c.lenientTimestamp(.addedAt)
         lastUsed = c.lenientTimestamp(.lastUsed)
+        fingerprint = c.lenientString(.fingerprint) ?? ""
     }
 
     public var displayName: String { DeviceRef(name: name, kind: kind).displayName }
@@ -446,42 +461,85 @@ public struct LogResult: Codable, Equatable, Sendable {
 
     /// Entries parsed for display, newest first.
     public var displayEntries: [AccessLogEntry] {
-        entries.map { AccessLogEntry(json: $0) }.reversed()
+        entries.enumerated().map { AccessLogEntry(json: $0.element, index: $0.offset) }.reversed()
     }
 }
 
-/// A best-effort view of one access-log line (the agent owns the exact format).
-public struct AccessLogEntry: Equatable, Sendable {
+/// One access-log line as the agent writes it (agent/internal/accesslog Entry):
+/// `{seq, ts, event, device?, deviceFp?, transport?, durationSec?, file?, size?, detail?, prev, mac}`.
+/// Decoding is lenient so older or newer agents never break the log view.
+public struct AccessLogEntry: Equatable, Identifiable, Sendable {
+    /// Unique within one LOG result (the entry's `seq` when present).
+    public var id: Int
     public var time: Date?
     public var event: String
     public var device: String?
+    public var deviceFingerprint: String?
+    public var transport: String?
+    public var durationSeconds: Int?
+    public var file: String?
+    public var size: Int64?
     public var detail: String?
 
-    public init(time: Date?, event: String, device: String?, detail: String?) {
+    public init(id: Int = 0, time: Date?, event: String, device: String?, detail: String?,
+                deviceFingerprint: String? = nil, transport: String? = nil, durationSeconds: Int? = nil,
+                file: String? = nil, size: Int64? = nil) {
+        self.id = id
         self.time = time
         self.event = event
         self.device = device
         self.detail = detail
+        self.deviceFingerprint = deviceFingerprint
+        self.transport = transport
+        self.durationSeconds = durationSeconds
+        self.file = file
+        self.size = size
     }
 
-    public init(json: JSONValue) {
+    public init(json: JSONValue, index: Int = 0) {
         guard case .object(let o) = json else {
-            self.init(time: nil, event: json.displayText, device: nil, detail: nil)
+            self.init(id: -(index + 1), time: nil, event: json.displayText, device: nil, detail: nil)
             return
         }
+        func text(_ keys: [String]) -> String? {
+            for key in keys {
+                if let value = o[key] {
+                    let t = value.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !t.isEmpty { return t }
+                }
+            }
+            return nil
+        }
+        func number(_ key: String) -> Int64? {
+            guard let d = o[key]?.doubleValue, d.isFinite, abs(d) < 9.0e15 else { return nil }
+            return Int64(d)
+        }
+        let seq = number("seq")
         let timeValue = o["ts"] ?? o["time"] ?? o["at"] ?? o["timestamp"]
-        let eventValue = o["event"] ?? o["type"] ?? o["action"] ?? o["kind"]
-        let deviceValue = o["device"] ?? o["deviceName"] ?? o["name"]
-        let detailValue = o["detail"] ?? o["reason"] ?? o["message"]
-        let deviceText = deviceValue?.displayText
-        let detailText = detailValue?.displayText
+        let duration = number("durationSec").flatMap { $0 > 0 ? Int(clamping: $0) : nil }
+        let size = number("size").flatMap { $0 > 0 ? $0 : nil }
         self.init(
-            time: Timestamp.from(timeValue)?.date,
-            event: eventValue?.displayText ?? "entry",
-            device: (deviceText?.isEmpty ?? true) ? nil : deviceText,
-            detail: (detailText?.isEmpty ?? true) ? nil : detailText
+            id: seq.map { Int(clamping: $0) } ?? -(index + 1),
+            time: Timestamp.from(timeValue).flatMap { $0.date.timeIntervalSince1970 > 0 ? $0.date : nil },
+            event: text(["event", "type", "action", "kind"]) ?? "entry",
+            device: text(["device", "deviceName", "name"]),
+            detail: text(["detail", "reason", "message"]),
+            deviceFingerprint: text(["deviceFp"]),
+            transport: text(["transport"]),
+            durationSeconds: duration,
+            file: text(["file"]),
+            size: size
         )
     }
+
+    /// Plain-language name of the event, e.g. "Connected".
+    public var title: String { AccessLogText.title(for: event) }
+
+    /// One line with the useful details, e.g. "through the relay · 12 min · you disconnected it".
+    public var summary: String { AccessLogText.summary(for: self) }
+
+    /// True for entries that are security warnings (shown in red).
+    public var isWarning: Bool { AccessLogText.isWarning(event) }
 }
 
 // MARK: - CONFIG (0x01)
@@ -578,6 +636,9 @@ public enum AgentCommand: Equatable, Sendable {
     case displays(list: [DisplayInfo], active: UInt32)
     case logRead(limit: Int)
     case newSetupCode
+    /// Only honoured by the agent while its trust store is unusable (tampered / foreign key):
+    /// moves pins.json and the access log aside and starts afresh with a new setup code.
+    case resetTrustStore
     case quit
 
     public var name: String {
@@ -593,6 +654,7 @@ public enum AgentCommand: Equatable, Sendable {
         case .displays: return "displays"
         case .logRead: return "log-read"
         case .newSetupCode: return "new-setup-code"
+        case .resetTrustStore: return "reset-trust-store"
         case .quit: return "quit"
         }
     }
@@ -605,7 +667,7 @@ extension AgentCommand: Encodable {
         var c = encoder.container(keyedBy: AnyCodingKey.self)
         try c.encode(name, forKey: AnyCodingKey("cmd"))
         switch self {
-        case .kill, .resume, .disconnect, .newSetupCode, .quit:
+        case .kill, .resume, .disconnect, .newSetupCode, .resetTrustStore, .quit:
             break
         case .approve(let requestId), .deny(let requestId):
             try c.encode(requestId, forKey: AnyCodingKey("requestId"))

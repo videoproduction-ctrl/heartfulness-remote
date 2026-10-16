@@ -216,9 +216,10 @@ extension KeyedDecodingContainer {
         return nil
     }
 
+    /// The agent writes unix seconds and uses 0 for "never"; 0 (and negatives) decode as nil.
     func lenientTimestamp(_ key: Key) -> Timestamp? {
-        if let t = try? decodeIfPresent(Timestamp.self, forKey: key) { return t }
-        return nil
+        guard let t = try? decodeIfPresent(Timestamp.self, forKey: key) else { return nil }
+        return t.date.timeIntervalSince1970 > 0 ? t : nil
     }
 }
 

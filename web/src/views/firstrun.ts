@@ -10,7 +10,7 @@ import { brand, hero, page } from "./common";
 export function firstRunView(app: App): View {
   const input = h("input", {
     class: "input",
-    testid: "server-input",
+    testid: "firstrun-origin-input",
     attrs: {
       type: "text",
       inputmode: "url",
@@ -23,10 +23,10 @@ export function firstRunView(app: App): View {
     },
   });
   input.value = app.platform.origin()?.replace(/^https:\/\//, "") ?? "";
-  const err = errorBox("server-error");
+  const err = errorBox("firstrun");
   const save = button({
     label: "Continue",
-    testid: "server-save",
+    testid: "firstrun-save",
     variant: "primary",
     large: true,
     type: "submit",

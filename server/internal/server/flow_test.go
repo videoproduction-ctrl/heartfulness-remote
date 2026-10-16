@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/videoproduction-ctrl/heartfulness-remote/proto"
+	"github.com/videoproduction-ctrl/heartfulness-remote/server/internal/config"
 	"github.com/videoproduction-ctrl/heartfulness-remote/server/internal/store"
 )
 
@@ -825,6 +827,64 @@ func TestClientWSRequiresSession(t *testing.T) {
 	// No Origin at all is refused for client sockets.
 	if _, res, err := e.dial("/ws/client", http.Header{"X-Forwarded-For": {"198.51.100.5"}}); err == nil || res.StatusCode != http.StatusForbidden {
 		t.Fatal("client socket without Origin accepted")
+	}
+}
+
+// linkBearer runs the native-app link flow and returns a bearer token.
+func linkBearer(t *testing.T, e *testEnv, phone *client, ip string) string {
+	t.Helper()
+	app := e.client(ip)
+	app.origin = tauri
+	m := app.post("/api/link/start", map[string]any{"name": "Native app"}).json(t)
+	if r := phone.post("/api/link/approve", map[string]any{"code": str(m, "code")}); r.code != 200 {
+		t.Fatalf("link approve: %d %s", r.code, r.body)
+	}
+	tok := str(app.post("/api/link/poll", map[string]any{"pollToken": str(m, "pollToken")}).json(t), "token")
+	if tok == "" {
+		t.Fatal("no bearer token")
+	}
+	return tok
+}
+
+// The Tauri app (macOS: tauri://localhost; Windows: http(s)://tauri.localhost)
+// opens /ws/client cross-origin and authenticates with its bearer token.
+func TestClientWSTauriOrigins(t *testing.T) {
+	e := newEnv(t, nil)
+	_, phone, _, _ := e.claim()
+	tok := linkBearer(t, e, phone, "198.51.100.120")
+	for i, origin := range config.TauriOrigins {
+		d := newDevice("Native " + origin)
+		ready := d.connect(e, &client{e: e, ip: "198.51.100." + strconv.Itoa(121+i), origin: origin}, tok)
+		if ready["device"].(map[string]any)["status"] != store.StatusUnknown {
+			t.Fatalf("%s: ready %v", origin, ready)
+		}
+	}
+	// From a Tauri origin the browser session cookie is ignored (only the
+	// bearer token authenticates there), and a cookie-kind token is not
+	// accepted as a bearer token.
+	for i, tc := range []struct{ cookie, token string }{{phone.cookie, ""}, {"", phone.cookie}} {
+		hdr := http.Header{"Origin": {tauri}, "X-Forwarded-For": {"198.51.100." + strconv.Itoa(130+i)}}
+		if tc.cookie != "" {
+			hdr.Set("Cookie", e.cfg.CookieName()+"="+tc.cookie)
+		}
+		p, _, err := e.dial("/ws/client", hdr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auth := map[string]any{"type": "auth"}
+		if tc.token != "" {
+			auth["token"] = tc.token
+		}
+		p.send(auth)
+		p.expectError("unauthorized")
+		p.expectClosed()
+	}
+	// Look-alike origins are refused at the upgrade.
+	for i, origin := range []string{"https://evil.example", "tauri://evil", "http://tauri.localhost.evil.example", "null"} {
+		hdr := http.Header{"Origin": {origin}, "X-Forwarded-For": {"198.51.100." + strconv.Itoa(140+i)}}
+		if _, res, err := e.dial("/ws/client", hdr); err == nil || res == nil || res.StatusCode != http.StatusForbidden {
+			t.Fatalf("origin %q accepted", origin)
+		}
 	}
 }
 

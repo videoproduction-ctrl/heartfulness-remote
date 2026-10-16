@@ -8,7 +8,7 @@ import { button, card, errorBox, setError } from "../ui";
 import { brand, hero, page } from "./common";
 
 export function linkApproveView(app: App): View {
-  const err = errorBox("link-error");
+  const err = errorBox("link");
   const input = h("input", {
     class: "input input-code",
     testid: "link-code-input",
@@ -30,7 +30,7 @@ export function linkApproveView(app: App): View {
   });
 
   const body = h("div", { class: "stack" });
-  const submit = button({ label: "Approve sign-in", testid: "link-approve", variant: "primary", large: true, type: "submit" });
+  const submit = button({ label: "Approve sign-in", testid: "link-approve-button", variant: "primary", large: true, type: "submit" });
   const form = h(
     "form",
     { class: "stack", attrs: { novalidate: true } },

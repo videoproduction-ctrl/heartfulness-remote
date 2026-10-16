@@ -229,8 +229,19 @@ class TauriPlatform implements Platform {
 
   async setOrigin(origin: string): Promise<void> {
     const o = normalizeOrigin(origin);
-    await this.invoke("config_set", { origin: o });
-    this.serverOrigin = o;
+    // config_set returns the canonical origin it stored; changing the origin
+    // makes the native side drop the saved token, so re-read it next time.
+    const stored = await this.invoke<unknown>("config_set", { origin: o });
+    let canonical = o;
+    if (typeof stored === "string" && stored !== "") {
+      try {
+        canonical = normalizeOrigin(stored);
+      } catch {
+        canonical = o;
+      }
+    }
+    if (canonical !== this.serverOrigin) this.token = undefined;
+    this.serverOrigin = canonical;
   }
 
   async signer(): Promise<Signer | null> {
@@ -251,8 +262,10 @@ class TauriPlatform implements Platform {
   }
 
   async resetDeviceKey(): Promise<void> {
+    // The app's device key lives in the OS keychain and the native side
+    // exposes no reset command (by design: the webview can't destroy or
+    // replace it). Re-pairing therefore reuses the same key.
     this.cached = null;
-    await this.invoke("device_key_reset");
   }
 
   private async getToken(): Promise<string | null> {

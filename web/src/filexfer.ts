@@ -37,21 +37,43 @@ interface Waiter<T> {
 const ACCEPT_TIMEOUT_MS = 60_000;
 const LS_TIMEOUT_MS = 20_000;
 
-function rejectReason(r: unknown): string {
+/** Plain-language text for a file-reject / file-error reason (agent/internal/core/datachannels.go). */
+export function rejectReason(r: unknown): string {
   switch (r) {
     case "too-large":
+    case "file too large":
       return "The file is too large for your Mac to accept.";
     case "disk-full":
     case "no-space":
+    case "not enough disk space":
       return "Your Mac is out of disk space.";
     case "not-found":
       return "The file no longer exists on your Mac.";
+    case "not-a-file":
+      return "That item can't be downloaded (it isn't a regular file).";
+    case "outside-home":
+    case "invalid-path":
+      return "Only files inside your Mac's home folder can be downloaded.";
+    case "permission-denied":
     case "denied":
     case "forbidden":
-      return "Your Mac refused this file.";
+      return "Your Mac doesn't allow access to that file.";
+    case "busy":
+      return "Your Mac is busy with other transfers. Try again in a moment.";
     case "checksum":
     case "bad-hash":
-      return "The file was damaged in transfer (checksum mismatch).";
+    case "checksum mismatch":
+    case "bad sha256 encoding":
+    case "incomplete":
+    case "more data than announced":
+      return "The file was damaged in transfer (checksum mismatch). Please try again.";
+    case "file-changed":
+      return "The file changed on your Mac while it was being sent. Please try again.";
+    case "timeout":
+      return "The transfer stalled and was stopped. Please try again.";
+    case "read-failed":
+    case "write-failed":
+      return "Your Mac couldn't read or write the file.";
     default:
       return typeof r === "string" && /^[\w .,'-]{1,80}$/.test(r) ? `Your Mac reported: ${r}` : "The transfer failed.";
   }
@@ -126,6 +148,16 @@ export class FilesController {
         return true;
       case "file-error": {
         const err = new Error(rejectReason(m["reason"]));
+        // A download that failed before it started carries only the reqId.
+        const reqId = m["reqId"];
+        if (id === "" && typeof reqId === "string" && this.getRequests.has(reqId)) {
+          const path = this.getRequests.get(reqId) ?? "";
+          this.getRequests.delete(reqId);
+          const name = path.split("/").pop() || "file";
+          this.notify(`Couldn't download “${name}”: ${err.message}`, "error");
+          return true;
+        }
+        if (id === "") return true;
         this.cancelled.add(id);
         this.acceptWaiters.get(id)?.reject(err);
         this.resultWaiters.get(id)?.reject(err);

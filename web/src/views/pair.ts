@@ -14,7 +14,8 @@ import { brand, hero, page } from "./common";
 const CHALLENGE_TIMEOUT_MS = 60_000;
 const APPROVAL_TIMEOUT_MS = 5 * 60_000;
 
-function denialText(reason: unknown): string {
+/** Plain-language text for pair-denied reasons (agent pairing.go, server hub.go). */
+export function denialText(reason: unknown): string {
   switch (reason) {
     case "expired":
     case "timeout":
@@ -22,10 +23,36 @@ function denialText(reason: unknown): string {
     case "rate-limited":
     case "too-many":
       return "Too many requests were denied recently. Please wait an hour, or approve directly on your Mac.";
+    case "too-many-pending":
+      return "Too many devices are waiting for approval right now. Approve or deny them first, then try again.";
     case "bad-commit":
+    case "commit-mismatch":
+    case "invalid":
       return "Your Mac rejected the request because a security check failed. Please try again.";
+    case "revoked":
+      return "This device was removed from your Mac before. Remove it from the list on your Mac or phone, then try again.";
+    case "host-offline":
+    case "host-reconnected":
+    case "unavailable":
+      return "Your Mac went offline before it could approve this device. Make sure it's on and running Heartfulness Remote, then try again.";
     default:
       return "The request was declined on your Mac or phone. If that was a mistake, try again.";
+  }
+}
+
+/** Plain-language text for a server {type:"error"} reply during pairing. */
+export function pairErrorText(code: unknown): string {
+  switch (code) {
+    case "host-offline":
+      return "Your Mac is offline. It must be on and running Heartfulness Remote to approve this device.";
+    case "pairing-in-progress":
+      return "This device is already waiting for approval. Check your Mac or phone.";
+    case "too-many-pending":
+      return "Too many devices are waiting for approval right now. Approve or deny them first, then try again.";
+    case "rate-limited":
+      return "Too many attempts. Please wait a few minutes and try again.";
+    default:
+      return `Your Mac couldn't be reached (${typeof code === "string" && /^[\w-]{1,40}$/.test(code) ? code : "error"}). Please try again.`;
   }
 }
 
@@ -33,13 +60,13 @@ export function pairView(app: App): View {
   let destroyed = false;
   let abort: AbortController | null = null;
   const offs: Array<() => void> = [];
-  const err = errorBox("pair-error");
+  const err = errorBox("pair");
   const body = h("div", { class: "stack" });
   const hostLine = h("p", { class: "status-line", testid: "pair-host-status" });
 
   const nameInput = h("input", {
     class: "input",
-    testid: "pair-device-name",
+    testid: "pair-name-input",
     attrs: { type: "text", maxlength: 48, autocomplete: "off", "aria-label": "Name for this device" },
   });
   nameInput.id = "pair-device-name";
@@ -73,7 +100,7 @@ export function pairView(app: App): View {
       h("label", { class: "label", attrs: { for: "pair-device-name" }, text: "Name this device" }),
       nameInput,
       h("p", { class: "hint", text: "You'll see this name on your Mac and in your list of trusted devices." }),
-      button({ label: "Ask for approval", testid: "pair-start", variant: "primary", large: true, icon: "shield", onClick: start }),
+      button({ label: "Ask for approval", testid: "pair-start-button", variant: "primary", large: true, icon: "shield", onClick: start }),
     );
   }
 
@@ -99,7 +126,12 @@ export function pairView(app: App): View {
           if (typeof m["requestId"] === "string" && requestId === null) requestId = m["requestId"];
         }),
       );
-      const failure = waitFor(sig, ["pair-denied", "error"], () => true, APPROVAL_TIMEOUT_MS + CHALLENGE_TIMEOUT_MS, ac.signal).then(
+      // Only errors about OUR pairing (pair-start errors, or ones naming our requestId) abort it.
+      const ours = (m: Msg) =>
+        m.type === "pair-denied"
+          ? requestId === null || m["requestId"] === undefined || m["requestId"] === requestId
+          : m["for"] === "pair-start" || (requestId !== null && m["requestId"] === requestId);
+      const failure = waitFor(sig, ["pair-denied", "error"], ours, APPROVAL_TIMEOUT_MS + CHALLENGE_TIMEOUT_MS, ac.signal).then(
         (m) => Promise.reject(m),
         () => new Promise<never>(() => undefined),
       );
@@ -127,7 +159,10 @@ export function pairView(app: App): View {
       showSAS(code);
 
       // 3) Wait for the decision.
-      const res = await Promise.race([waitFor(sig, ["pair-approved"], () => true, APPROVAL_TIMEOUT_MS, ac.signal), failure]);
+      const res = await Promise.race([
+        waitFor(sig, ["pair-approved"], (m) => m["requestId"] === undefined || m["requestId"] === rid, APPROVAL_TIMEOUT_MS, ac.signal),
+        failure,
+      ]);
       await finishApproved(res, ch.hostPub, devicePub);
       ac.abort(); // release the remaining listeners
     } catch (e) {
@@ -140,7 +175,11 @@ export function pairView(app: App): View {
       }
       if (e && typeof e === "object" && "type" in e) {
         const m = e as Msg;
-        setError(err, m.type === "pair-denied" ? denialText(m["reason"]) : `Your Mac couldn't be reached (${String(m["code"] ?? "error")}).`);
+        if (m.type === "error" && m["code"] === "already-approved") {
+          void app.refreshMe().then(() => app.boot());
+          return;
+        }
+        setError(err, m.type === "pair-denied" ? denialText(m["reason"]) : pairErrorText(m["code"]));
       } else if (e instanceof Error && e.message === "timeout") {
         setError(err, "No answer from your Mac. Make sure it's on and running Heartfulness Remote, then try again.");
       } else {
@@ -172,7 +211,7 @@ export function pairView(app: App): View {
     replace(
       body,
       h("p", { class: "center sas-intro", text: "On your Mac or phone, approve this device and check the code matches:" }),
-      h("div", { class: "sas", testid: "pair-sas", attrs: { "aria-label": `Code ${code.split("").join(" ")}` }, text: formatSAS(code) }),
+      h("div", { class: "sas", testid: "pair-sas", attrs: { "aria-label": `Code ${code.split("").join(" ")}`, "data-sas": code }, text: formatSAS(code) }),
       h("p", { class: "status-line", testid: "pair-status" }, spinner(""), " Waiting for approval…"),
       h("p", { class: "hint center", text: "If the code is different, deny the request — someone may be trying to get in." }),
       cancelButton(),

@@ -48,6 +48,7 @@ export function rejectText(reason: unknown): string {
   }
 }
 
+/** Plain-language text for a "bye" / "session-end" reason (agent session.go, server hub.go). */
 export function byeText(reason: unknown): string {
   switch (reason) {
     case "idle":
@@ -58,17 +59,36 @@ export function byeText(reason: unknown): string {
     case "blocked":
       return "All connections were blocked on your Mac.";
     case "revoked":
+    case "trust-reset":
       return "This device was removed from your Mac's trusted devices.";
     case "replaced":
       return "Another device took over the session.";
     case "quit":
     case "host-quit":
     case "shutdown":
+    case "host-shutdown":
       return "Heartfulness Remote was closed on your Mac.";
     case "user":
     case "disconnect":
     case "host":
+    case "host-disconnected":
       return "The session was ended on your Mac.";
+    case "browser-disabled":
+      return "Your Mac no longer accepts web browsers, only the Heartfulness Remote app. You can change this in the settings on your Mac.";
+    case "host-offline":
+    case "host-reconnected":
+      return "Your Mac lost its connection to the server. It usually comes back within a minute — try Reconnect.";
+    case "offer-rejected":
+      return "Your Mac couldn't verify this device's security signature, so it refused the connection. Try again; if it keeps happening, remove this device and approve it again.";
+    case "no-common-codec":
+      return "This browser can't play your Mac's video format. Try a recent Chrome, Edge or Safari.";
+    case "offer-timeout":
+    case "connect-timeout":
+    case "timeout":
+      return "The connection took too long to set up. Please try again.";
+    case "connection-failed":
+    case "connection-closed":
+      return "The connection to your Mac was lost.";
     default:
       return "The session ended.";
   }
@@ -267,11 +287,14 @@ export class RemoteSession {
     // MUST happen before setRemoteDescription: pinned host key + fingerprint rule.
     await verifyAnswer(binding, offerSdp, answerSdp, answerSig);
     if (this.ended) return;
+    // Announce "connecting" BEFORE applying the answer: on a fast (LAN) link ICE
+    // and DTLS can complete while we are still awaiting below, and a late
+    // "connecting" would otherwise cover a session that is already live.
+    this.ev.stage("connecting");
     await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
     this.remoteSet = true;
     for (const c of this.remoteIce.splice(0)) await this.addRemoteIce(c);
-
-    this.ev.stage("connecting");
+    if (this.ended || this.connected) return;
     this.timer(() => {
       if (!this.connected) this.end("network", "Couldn't establish a connection to your Mac. A firewall may be blocking it — try again, or check your network.", true);
     }, CONNECT_TIMEOUT_MS);

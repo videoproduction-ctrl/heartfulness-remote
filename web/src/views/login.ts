@@ -3,13 +3,17 @@
 // the owner types it into a browser where they're signed in with a passkey.
 
 import type { App, View } from "../app";
-import type { Flow } from "../api";
+import { ApiError, type Flow } from "../api";
 import { defaultDeviceName } from "../device-name";
 import { h, replace } from "../dom";
 import { button, card, errorBox, setError, spinner } from "../ui";
 import { getPasskey, webauthnAvailable } from "../webauthn";
 import { brand, hero, page } from "./common";
 import { firstRunView } from "./firstrun";
+
+// The server's link/poll bucket refills one token every 6 s (burst 10).
+const POLL_MS = 3000;
+const POLL_BACKOFF_MS = 6500;
 
 export function loginView(app: App): View {
   return app.platform.kind === "tauri" ? linkLoginView(app) : passkeyLoginView(app);
@@ -19,7 +23,7 @@ function passkeyLoginView(app: App): View {
   let destroyed = false;
   let flow: Flow | null = null;
   let loading: Promise<void> | null = null;
-  const err = errorBox("login-error");
+  const err = errorBox("login");
 
   const prepare = (): Promise<void> => {
     loading = app.api
@@ -92,7 +96,7 @@ function passkeyLoginView(app: App): View {
 function linkLoginView(app: App): View {
   let destroyed = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
-  const err = errorBox("login-error");
+  const err = errorBox("login");
   const body = h("div", { class: "stack" });
   const origin = app.platform.origin() ?? "";
 
@@ -154,12 +158,16 @@ function linkLoginView(app: App): View {
           showStart();
           return;
         }
-      } catch {
-        // Transient network error: keep polling until the deadline.
+        delay = POLL_MS;
+      } catch (e) {
+        // Transient error: keep polling until the deadline. The server allows
+        // ~10 polls a minute, so back off when it says "too many".
+        delay = e instanceof ApiError && e.status === 429 ? Math.max(POLL_BACKOFF_MS, (e.retryAfter ?? 0) * 1000) : POLL_MS;
       }
-      pollTimer = setTimeout(() => void poll(), 2000);
+      pollTimer = setTimeout(() => void poll(), delay);
     };
-    pollTimer = setTimeout(() => void poll(), 2000);
+    let delay = POLL_MS;
+    pollTimer = setTimeout(() => void poll(), delay);
   }
 
   showStart();

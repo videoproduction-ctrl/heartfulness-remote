@@ -112,6 +112,14 @@ a {
   outline-offset: 2px;
 }
 
+/* Headings and other tabindex=-1 targets receive focus programmatically on
+   each view change (for screen readers). They can't be reached with Tab, so
+   don't draw a focus ring on them. */
+[tabindex="-1"]:focus,
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 .visually-hidden {
   position: absolute !important;
   width: 1px;
@@ -1353,4 +1361,19 @@ kbd {
   .pill-dot {
     forced-color-adjust: none;
   }
+}
+
+/* Folder rows in the files panel are clickable as a whole. */
+.file-entry.is-folder {
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.file-entry.is-folder:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.file-entry.is-folder:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-fill) 60%, transparent);
+  outline-offset: 0;
 }

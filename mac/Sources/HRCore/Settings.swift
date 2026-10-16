@@ -137,9 +137,19 @@ public enum ServerAddress {
         return .success(origin)
     }
 
+    /// Loopback names the agent accepts over plain http (agent/internal/signaling isLoopback:
+    /// "localhost" or a loopback IP address).
     public static func isLocalhost(_ host: String) -> Bool {
-        let h = host.lowercased()
-        return h == "localhost" || h == "127.0.0.1" || h == "::1" || h.hasSuffix(".localhost")
+        var h = host.lowercased()
+        if h.hasPrefix("[") && h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
+        if h == "localhost" || h == "::1" || h == "0:0:0:0:0:0:0:1" { return true }
+        let parts = h.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts[0] == "127" else { return false }
+        return parts.allSatisfy { part in
+            guard !part.isEmpty, part.count <= 3, part.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let value = Int(part) else { return false }
+            return value <= 255
+        }
     }
 
     /// Display form without the scheme, e.g. "heartfulness-remote.dedyn.io".

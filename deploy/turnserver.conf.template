@@ -13,6 +13,8 @@ listening-port=3478
 no-tls
 no-dtls
 
+# The server's public IPv4 address, or "public/private" when the VPS sits
+# behind 1:1 NAT (provision.sh decides; it never asks a third-party service).
 external-ip=@HR_EXTERNAL_IP@
 realm=@HR_DOMAIN@
 server-name=@HR_DOMAIN@
@@ -27,12 +29,27 @@ stale-nonce=600
 # Relay port range (opened in the firewall by provision.sh).
 min-port=49160
 max-port=49200
-user-quota=12
+# Quotas: concurrent allocations per TURN username and in total (the 41 relay
+# ports above cap the total anyway). One username covers every allocation
+# made with one credential: the Mac reuses its credential for 12 h, each
+# session allocates once per TURN URL (and per network interface in
+# browsers), and allocations left by a dropped connection linger for up to
+# 10 minutes, so the per-user quota leaves room for several quick reconnects.
+user-quota=20
 total-quota=40
+# WebRTC only needs UDP relays; refuse RFC 6062 TCP relay allocations.
+no-tcp-relay
 
 # Never relay into private, loopback, link-local, CGNAT, multicast or
-# reserved address space (prevents using the relay to reach the VPS itself or
-# its provider's internal network).
+# reserved address space (prevents using the relay to reach the VPS itself,
+# its Docker networks or its provider's internal network / metadata service).
+#
+# CAUTION: in coturn an all-zero bound ("0.0.0.0" or "::") means "unbounded".
+# "denied-peer-ip=::-::" therefore denies EVERY peer (IPv4 too) and breaks the
+# relay completely; never add it. The unspecified addresses 0.0.0.0 and [::]
+# are refused by coturn itself (CVE-2020-26262 fix) and 0.0.0.0/8 is listed
+# below. The VPS's own public address must stay allowed: when both ends are
+# relayed, each peer address is a relay address on this same server.
 no-multicast-peers
 denied-peer-ip=0.0.0.0-0.255.255.255
 denied-peer-ip=10.0.0.0-10.255.255.255
@@ -49,7 +66,6 @@ denied-peer-ip=198.51.100.0-198.51.100.255
 denied-peer-ip=203.0.113.0-203.0.113.255
 denied-peer-ip=224.0.0.0-239.255.255.255
 denied-peer-ip=240.0.0.0-255.255.255.255
-denied-peer-ip=::-::
 denied-peer-ip=::1-::1
 denied-peer-ip=::ffff:0.0.0.0-::ffff:255.255.255.255
 denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
@@ -58,8 +74,10 @@ denied-peer-ip=100::-100::ffff:ffff:ffff:ffff
 denied-peer-ip=2001::-2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=2001:db8::-2001:db8:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=2002::-2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=3fff::-3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=5f00::-5f00:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=ff00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 
 # Hardening. In coturn 4.7, legacy STUN backward compatibility, RFC 5780 and

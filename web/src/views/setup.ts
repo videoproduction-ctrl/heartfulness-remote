@@ -27,7 +27,7 @@ export function setupView(app: App, frag: SetupFragment): View {
   const cleanups: Array<() => void> = [];
 
   const status = h("p", { class: "status-line", testid: "setup-status", attrs: { "aria-live": "polite" } });
-  const err = errorBox("setup-error");
+  const err = errorBox("setup");
   const body = h("div", { class: "stack" });
   const macKey = h("p", { class: "fineprint", testid: "setup-mac-fingerprint" });
   void fingerprint(hostPub).then((fp) => {

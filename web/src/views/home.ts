@@ -41,7 +41,7 @@ export function homeView(app: App): View {
   const statusCard = h(
     "section",
     { class: "card status-card", testid: "home-status", attrs: { "aria-live": "polite" } },
-    h("div", { class: "status-head" }, dot, h("div", { class: "status-text" }, title, detail)),
+    h("div", { class: "status-head" }, dot, h("div", { class: "status-text", testid: "home-status-text" }, title, detail)),
     macName,
     helpLink,
     connect,
@@ -130,7 +130,11 @@ export function homeView(app: App): View {
         h("span", { class: "muted", testid: "approval-kind", text: `${kindLabel(a.req.kind)} wants to connect to your Mac` }),
       ),
     );
-    const item = h("div", { class: "approval-item", testid: "approval-item", attrs: { "data-request-id": a.key } }, head);
+    const item = h(
+      "div",
+      { class: "approval-item", testid: "approval-item", attrs: { "data-request-id": a.key, "data-state": a.error || !a.sas ? "invalid" : a.state } },
+      head,
+    );
     if (a.error || !a.sas) {
       item.appendChild(h("p", { class: "error-box", testid: "approval-error", text: a.error ?? "This request could not be verified." }));
       item.appendChild(
@@ -139,7 +143,7 @@ export function homeView(app: App): View {
       return item;
     }
     item.appendChild(h("p", { class: "muted", text: "Only approve if this code matches the one shown on the new device:" }));
-    item.appendChild(h("div", { class: "sas sas-small", testid: "approval-sas", text: formatSAS(a.sas) }));
+    item.appendChild(h("div", { class: "sas sas-small", testid: "approval-sas", text: formatSAS(a.sas), attrs: { "data-sas": a.sas } }));
     if (a.state === "sent") {
       item.appendChild(h("p", { class: "status-line", testid: "approval-sent", text: "Approved. Waiting for your Mac to confirm…" }));
       return item;
@@ -231,7 +235,7 @@ export function homeView(app: App): View {
     else if (d.createdAt) meta.push(`added ${formatDate(d.createdAt)}`);
     return h(
       "div",
-      { class: "item", testid: "device-item", attrs: { "data-pub": d.pub, "data-status": d.status } },
+      { class: "item", testid: "device-item", attrs: { "data-pub": d.pub, "data-status": d.status, "data-mine": mine ? "1" : null } },
       h("span", { class: "item-icon" }, icon(kindIcon(d.kind))),
       h(
         "div",
