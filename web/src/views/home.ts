@@ -120,7 +120,8 @@ export function homeView(app: App): View {
       idEl.setAttribute("aria-label", `Mac ID ${m.macId.split("").join(" ")}`);
       menuBtn.setAttribute("aria-label", `Details for ${m.name || "this Mac"}`);
       titleLabel.textContent = st.title;
-      detail.textContent = st.detail;
+      // "Ready to connect" only where this device can actually connect.
+      detail.textContent = st.kind === "online" && !usable ? "This Mac is on and reachable." : st.detail;
       help.hidden = st.kind !== "offline";
 
       let noteText = "";
@@ -151,7 +152,6 @@ export function homeView(app: App): View {
           actionButtons.block.classList.add("btn-danger-text");
           kids.push(actionButtons.connect, actionButtons.block);
         } else if (shape === "allow") {
-          kids.push(h("p", { class: "muted", text: "This Mac is refusing all connections until you allow them again." }));
           actionButtons.allow = legacyLabelId(
             button({
               label: "Allow connections",
@@ -313,7 +313,7 @@ export function homeView(app: App): View {
         { class: "item-text" },
         h("strong", { testid: "approval-name", text: a.req.name || "Unnamed device" }),
         h("span", { class: "muted", testid: "approval-kind", text: `${kindLabel(a.req.kind)} wants to use “${macName}”` }),
-        mac ? h("span", { class: "muted mac-id-small", testid: "approval-mac", text: `${macName} · Mac ID ${formatMacId(mac.macId)}` }) : null,
+        mac ? h("span", { class: "muted mac-id-small", testid: "approval-mac", text: `Mac ID ${formatMacId(mac.macId)}` }) : null,
       ),
     );
     const item = h(

@@ -104,12 +104,14 @@ export function pairView(app: App, target: string | null): View {
   offs.push(app.on("macs", renderHost));
   renderHost();
 
-  // This device may be approved on the target Mac while this screen is shown.
-  offs.push(
-    app.on("status", () => {
-      if (target && app.canUse(target) && !abort) app.routeByStatus();
-    }),
-  );
+  // This device may be approved on the target Mac while this screen is shown
+  // (e.g. from another tab). Our own success shows its check mark first.
+  let finished = false;
+  const approvedElsewhere = () => {
+    if (!finished && target && app.canUse(target) && !abort) app.routeByStatus();
+  };
+  offs.push(app.on("status", approvedElsewhere));
+  offs.push(app.on("macs", approvedElsewhere));
 
   function showIntro(): void {
     abort?.abort();
@@ -215,6 +217,7 @@ export function pairView(app: App, target: string | null): View {
     // Pin only a host key that (a) produced the SAS the user compared and
     // (b) issued a valid certificate for exactly our device key.
     await verifyCert(m["cert"], hostPub, devicePub);
+    finished = true;
     await app.pinMac(hostPub, target ? app.macName(target) : "");
     abort = null;
     replace(

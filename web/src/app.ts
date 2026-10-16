@@ -204,7 +204,7 @@ export class App {
     const before = new Map(this.macs.map((m) => [m.pub, m.deviceStatus]));
     this.macs = next;
     for (const m of next) {
-      if (before.get(m.pub) === "approved" && m.deviceStatus === "revoked") {
+      if (next.length > 1 && before.get(m.pub) === "approved" && m.deviceStatus === "revoked") {
         toast(`This device was removed from “${m.name || "a Mac"}”.`, "info", 7000);
       }
     }

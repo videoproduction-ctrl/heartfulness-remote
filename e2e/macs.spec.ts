@@ -68,6 +68,11 @@ test("3. a third Mac is added by scanning its QR link on the phone", async () =>
   const st = await waitFor(() => (edit.state().joinURL ? edit.state() : undefined), 15000, "join url");
   await phone.page.goto(st.joinURL);
   await expect.poll(() => phone.page.url()).not.toContain("#join=");
+  // A link alone never adds a Mac: the owner confirms the name and Mac ID first.
+  await expect(phone.page.getByTestId("add-mac-confirm")).toContainText(formatId(st.macId));
+  await expect(phone.page.getByTestId("add-mac-done")).toHaveCount(0);
+  expect(edit.state().joined).toBe(false);
+  await phone.page.getByTestId("add-mac-submit").click();
   await expect(phone.page.getByTestId("add-mac-done")).toBeVisible();
   await waitFor(() => edit.state().joined === true, 10000, "edit joined");
 });
